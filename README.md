@@ -47,6 +47,18 @@ Esto levanta el servidor con `nodemon` (reinicia solo ante cada cambio). Por def
 - Documentación Swagger en `http://localhost:4000/api-docs`
 - Endpoint de salud: `GET /health`
 
+## Docker
+
+Este repo incluye un `Dockerfile` que empaqueta el backend como contenedor. **No se usa de forma aislada** — está pensado para ser construido y orquestado en conjunto con `Frontend` y `Nginx` desde el repo `Infraestructura`, que tiene su propio `docker-compose.yml` referenciando este repo como contexto de build.
+
+Para desarrollo del día a día, seguir usando `npm run dev` como se indica arriba — Docker es la forma de levantar el stack completo (frontend + backend + Nginx) tal como funcionaría en producción, no el flujo normal de trabajo diario.
+
+Si se necesita construir la imagen de este repo de forma aislada (poco común, mayormente para debug):
+
+```bash
+docker build -t backend .
+```
+
 ## Base de datos (Drizzle)
 
 El schema de las tablas vive en `src/db/schema.js`. Cada vez que se modifica ese archivo:

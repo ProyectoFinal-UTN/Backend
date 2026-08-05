@@ -51,7 +51,7 @@ Esto levanta el servidor con `nodemon` (reinicia solo ante cada cambio). Por def
 
 Este repo incluye un `Dockerfile` que empaqueta el backend como contenedor. **No se usa de forma aislada** — está pensado para ser construido y orquestado en conjunto con `Frontend` y `Nginx` desde el repo `Infraestructura`, que tiene su propio `docker-compose.yml` referenciando este repo como contexto de build.
 
-Para desarrollo del día a día, seguir usando `npm run dev` como se indica arriba — Docker es la forma de levantar el stack completo (frontend + backend + Nginx) tal como funcionaría en producción, no el flujo normal de trabajo diario.
+Para desarrollo del día a día, seguir usando `npm run dev` como se indica arriba — Docker es la forma de levantar el stack completo (frontend + backend + Nginx) en un entorno local que simula la integración entre servicios, útil para pruebas y para demostrar la arquitectura, pero **no es lo que corre en producción**. El backend se despliega en producción como servicio independiente en **Render**, sin Nginx propio (ver Informe de Arquitectura y Despliegue).
 
 Si se necesita construir la imagen de este repo de forma aislada (poco común, mayormente para debug):
 

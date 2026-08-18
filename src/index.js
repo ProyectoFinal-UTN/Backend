@@ -20,6 +20,10 @@ const swaggerSpec = swaggerJsdoc({
       version: "1.0.0",
       description: "Documentación de la API del backend",
     },
+    servers: [
+      { url: "/", description: "Directo al backend (desarrollo local, sin Nginx)" },
+      { url: "/api", description: "A través de Nginx (stack completo con Docker)" },
+    ],
   },
   apis: ["./src/index.js", "./src/routes/*.js"], // acá va a buscar los comentarios @openapi de cada ruta
 });

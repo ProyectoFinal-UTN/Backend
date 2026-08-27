@@ -41,7 +41,7 @@ app.use(cors({ origin: origenesPermitidos, credentials: true }));
  */
 // Va montado ANTES de express.json(): Better Auth necesita leer el body crudo.
 // Si se invierte el orden, todos los POST de auth fallan sin error claro.
-app.all("/api/auth/{*any}", toNodeHandler(auth));
+app.all("/api/auth/*", toNodeHandler(auth));
 
 app.use(express.json());
 

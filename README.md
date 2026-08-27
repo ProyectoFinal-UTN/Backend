@@ -8,7 +8,9 @@ API REST del proyecto. Node + Express + Drizzle ORM + PostgreSQL (Neon), con doc
 - **Express 5**
 - **Drizzle ORM** + `pg` (driver de PostgreSQL)
 - **Swagger** (`swagger-jsdoc` + `swagger-ui-express`) — documentación interactiva
-- **Better Auth** (pendiente de integrar — ver `middlewares/auth.middleware.js`)
+- **Better Auth** (+ plugin `organization`) — sesión, roles y multi-tenant
+- **Jest** + **supertest** — tests unitarios y de integración
+- **ESLint** — linter
 - Base de datos: **PostgreSQL en Neon**
 
 ## Requisitos previos
@@ -34,6 +36,14 @@ cp .env.example .env
 
 2. Completar `.env` con los valores reales (pedirlos al equipo, nunca inventarlos ni dejarlos con el placeholder de ejemplo).
 3. **El archivo `.env` NUNCA se commitea.** Ya está en `.gitignore`, pero prestá atención antes de cualquier `git add .` si alguna vez lo movés o renombrás.
+
+`BETTER_AUTH_SECRET` es la única que no se pide al equipo: cada uno genera la suya en local con
+
+```bash
+openssl rand -base64 32
+```
+
+En producción (Render) se carga una distinta, en las variables de entorno del servicio.
 
 ## Levantar el proyecto en desarrollo
 
@@ -78,15 +88,24 @@ npx drizzle-kit studio
 
 ```
 src/
-├── index.js              # arranca Express, monta Swagger y las rutas
+├── index.js               # solo levanta el servidor (app.listen)
+├── app.js                 # arma Express: CORS, Better Auth, Swagger, rutas, errores
+├── lib/
+│   ├── auth.js            # configuración de Better Auth
+│   └── permissions.js     # roles de RF9 y matriz de permisos
 ├── db/
-│   ├── client.js         # conexión a Postgres (Drizzle)
-│   └── schema.js         # definición de tablas
+│   ├── client.js          # conexión a Postgres (Drizzle)
+│   └── schema.js          # definición de tablas
 ├── routes/                # define endpoints (URL + método), documentación Swagger
 ├── controllers/           # recibe req/res, llama al service, devuelve la respuesta HTTP
-├── services/               # lógica de negocio real, es lo único que habla con la base
-└── middlewares/            # funciones que corren antes del controller (auth, roles, errores)
+├── services/              # lógica de negocio real, es lo único que habla con la base
+└── middlewares/           # funciones que corren antes del controller (auth, roles, errores)
+
+tests/                     # Jest: unitarios y de integración (supertest)
+drizzle/                   # migraciones generadas, no se editan a mano
 ```
+
+`index.js` y `app.js` están separados a propósito: los tests de integración importan `app` sin abrir un puerto.
 
 **Regla de tres capas**: una ruta nunca llama directo a la base. El flujo siempre es:
 
@@ -119,8 +138,41 @@ app.use("/api/productos", productosRoutes);
 
 ## Autenticación y roles
 
-- El middleware `src/middlewares/auth.middleware.js` (`requireAuth`) todavía es un placeholder — deja pasar todo sin validar nada. Se completa cuando se integre Better Auth.
-- Los tres roles del sistema son `propietario`, `gerente`, `empleado` (RF9). Cualquier ruta que deba restringirse por rol debe usar un middleware de verificación (a crear junto con la integración de Better Auth), **nunca** validar el rol manualmente dentro de cada controller.
+Better Auth está integrado y expone todo el ciclo de sesión en `/api/auth/*` (registro, login, logout, recuperación). No hace falta escribir esos endpoints a mano.
+
+- **Configuración**: `src/lib/auth.js`. Si la tocás (agregar un plugin, un campo), después corré `npm run auth:generate` para regenerar las tablas en `src/db/schema.js`, y luego `npm run db:generate && npm run db:migrate`.
+- **Roles y permisos**: `src/lib/permissions.js`. Los tres roles son `propietario`, `gerente`, `empleado` (RF9), y viven en la tabla `member` de Better Auth.
+- **Middlewares** (`src/middlewares/auth.middleware.js`):
+
+```js
+import { requireAuth, requireRole, requirePermission } from "../middlewares/auth.middleware.js";
+
+// Valida la sesión y deja en req: usuario, rol, comercioId
+router.get("/", requireAuth, controller.listar);
+
+// Restringe por rol
+router.get("/auditoria", requireAuth, requireRole("propietario"), controller.listar);
+
+// Restringe por permiso concreto (preferible: si cambia la matriz, la ruta no se entera)
+router.delete("/:id", requireAuth, requirePermission({ producto: ["delete"] }), controller.eliminar);
+```
+
+- **Multi-tenant**: `requireAuth` deja `req.comercioId` tomado **de la sesión**. Toda query de negocio filtra por ese valor, y nunca por un `comercio_id` que venga del body o la query string.
+- El rol **nunca** se valida con un `if` dentro de un controller — siempre por middleware.
+
+## Tests y linter
+
+```bash
+npm test              # Jest (unitarios + integración con supertest)
+npm run test:watch
+npm run test:coverage
+npm run lint          # ESLint
+npm run lint:fix
+```
+
+Los tests viven en `tests/`. Los de integración importan `src/app.js` (la app sin `listen`), por eso no hace falta levantar el servidor para correrlos.
+
+Jest corre sobre ESM con `NODE_OPTIONS=--experimental-vm-modules`, ya incluido en el script `npm test`. Si lo invocás con `npx jest` directo, va a fallar al importar los módulos.
 
 ## Manejo de secretos
 
@@ -149,4 +201,8 @@ app.use("/api/productos", productosRoutes);
 
 - **Warning de SSL al correr `drizzle-kit migrate`** ("SECURITY WARNING: The SSL modes..."): es una advertencia esperada por el modo `sslmode=require` de Neon, no es un error. Se puede ignorar.
 - **`process.env.DATABASE_URL` da `undefined` en `drizzle.config.js`**: falta el `import "dotenv/config";` al principio del archivo.
-- **Swagger muestra "No operations defined in spec!"**: revisar que el archivo con los comentarios `@openapi` esté incluido en el array `apis` de la configuración en `src/index.js`.
+- **Swagger muestra "No operations defined in spec!"**: revisar que el archivo con los comentarios `@openapi` esté incluido en el array `apis` de la configuración en `src/app.js`.
+- **El registro devuelve 500 y el usuario se crea pero no puede loguearse**: el schema de Better Auth quedó desactualizado (típicamente falta `account.issuer`). Regenerar con `npm run auth:generate`. **Ojo**: el CLI viejo `@better-auth/cli` está deprecado y genera un schema de una versión anterior — el correcto es `npx auth@latest generate`, que ya está en el script.
+- **`npx jest` falla al importar módulos**: el proyecto es ESM. Usar siempre `npm test`, que agrega `NODE_OPTIONS=--experimental-vm-modules`.
+- **El Frontend no manda la cookie de sesión**: revisar que su origen esté en `TRUSTED_ORIGINS` del `.env`, y que el `fetch` del Frontend use `credentials: "include"`.
+- **`drizzle-kit generate` se cuelga pidiendo confirmación**: detectó un posible rename de tabla y abre un prompt interactivo. Hay que correrlo en una terminal real, no desde un script o CI.

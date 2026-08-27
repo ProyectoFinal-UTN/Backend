@@ -1,6 +1,6 @@
 {
-  "id": "d9041a1b-da62-4f01-8a2a-74bfa722fdfc",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "451494c0-4bfc-4271-aeeb-7ef94fd9ee05",
+  "prevId": "d9041a1b-da62-4f01-8a2a-74bfa722fdfc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12,6 +12,12 @@
           "name": "id",
           "type": "text",
           "primaryKey": true,
+          "notNull": true
+        },
+        "issuer": {
+          "name": "issuer",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true
         },
         "account_id": {
@@ -89,6 +95,27 @@
         }
       },
       "indexes": {
+        "account_issuer_accountId_uidx": {
+          "name": "account_issuer_accountId_uidx",
+          "columns": [
+            {
+              "expression": "issuer",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "account_userId_idx": {
           "name": "account_userId_idx",
           "columns": [
@@ -505,23 +532,7 @@
           "notNull": false
         }
       },
-      "indexes": {
-        "organization_slug_uidx": {
-          "name": "organization_slug_uidx",
-          "columns": [
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {

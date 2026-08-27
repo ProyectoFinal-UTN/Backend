@@ -53,16 +53,15 @@ const swaggerSpec = swaggerJsdoc({
       version: "1.0.0",
       description: "Documentación de la API del backend",
     },
-    servers: [
-      {
-        url: "/",
-        description: "Directo al backend (desarrollo local, sin Nginx)",
-      },
-      {
-        url: "/api",
-        description: "A través de Nginx (stack completo con Docker)",
-      },
-    ],
+    // Un solo servidor a proposito.
+    //
+    // Antes habia dos ("/" directo y "/api" por Nginx) porque el proxy
+    // strippeaba el prefijo /api y las rutas terminaban siendo distintas en
+    // cada entorno. Con el proxy_pass sin barra final (ver el PR de
+    // Infraestructura) las URLs son identicas con y sin Docker, asi que una
+    // sola entrada alcanza. Si se volvieran a poner las dos, elegir "/api"
+    // convertiria /api/auth/x en /api/api/auth/x y daria 404.
+    servers: [{ url: "/", description: "Base de la API" }],
   },
   apis: ["./src/app.js", "./src/routes/*.js"],
 });

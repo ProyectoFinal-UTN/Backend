@@ -193,6 +193,42 @@ export const comercio = pgTable(
   ],
 );
 
+/**
+ * Lugares fisicos donde el comercio guarda stock (HU-8).
+ *
+ * Es una tabla y no un enum a proposito: cada comercio define las suyas, no
+ * hay un "local"/"deposito" fijo. No hardcodear nombres de ubicacion en ningun
+ * repo (ver references/data-model.md).
+ *
+ * El stock de un producto se lleva por `(producto, ubicacion)`, y el total del
+ * producto es la suma de sus ubicaciones.
+ */
+export const ubicacion = pgTable(
+  "ubicacion",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    comercioId: uuid("comercio_id")
+      .notNull()
+      .references(() => comercio.id, { onDelete: "cascade" }),
+    nombre: varchar("nombre", { length: 100 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    // Dos ubicaciones con el mismo nombre en un mismo comercio no tienen
+    // sentido y harian ambigua cualquier lectura de stock. Entre comercios
+    // distintos si pueden repetirse.
+    uniqueIndex("ubicacion_comercioId_nombre_uidx").on(
+      table.comercioId,
+      table.nombre,
+    ),
+    index("ubicacion_comercioId_idx").on(table.comercioId),
+  ],
+);
+
 /* ---------------------------------------------------------------------------
  * Relaciones
  * ------------------------------------------------------------------------- */
@@ -240,9 +276,17 @@ export const invitationRelations = relations(invitation, ({ one }) => ({
   user: one(user, { fields: [invitation.inviterId], references: [user.id] }),
 }));
 
-export const comercioRelations = relations(comercio, ({ one }) => ({
+export const comercioRelations = relations(comercio, ({ many, one }) => ({
   organization: one(organization, {
     fields: [comercio.organizationId],
     references: [organization.id],
+  }),
+  ubicaciones: many(ubicacion),
+}));
+
+export const ubicacionRelations = relations(ubicacion, ({ one }) => ({
+  comercio: one(comercio, {
+    fields: [ubicacion.comercioId],
+    references: [comercio.id],
   }),
 }));

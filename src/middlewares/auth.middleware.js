@@ -27,6 +27,7 @@ export async function requireAuth(req, res, next) {
 
     const contexto = await obtenerContextoDeComercio({
       userId: sesion.user.id,
+      email: sesion.user.email,
       organizationId: sesion.session.activeOrganizationId,
     });
 

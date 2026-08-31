@@ -83,10 +83,21 @@ export function requireRole(...rolesPermitidos) {
  */
 export function requirePermission(permisos) {
   return function verificarPermiso(req, res, next) {
+    // Sin rol en la request no hubo sesion: eso si es un 401.
+    if (!req.rol) {
+      return res.status(401).json({ error: "No hay sesion activa" });
+    }
+
     const rol = roles[req.rol];
 
+    // Con rol pero desconocido (un typo en un seed, un rol renombrado) la
+    // sesion existe, asi que el 401 mentiria: el front lo leeria como sesion
+    // vencida, desloguearia, el login funcionaria, y volveria a fallar en un
+    // loop. Es un 403.
     if (!rol) {
-      return res.status(401).json({ error: "No hay sesion activa" });
+      return res
+        .status(403)
+        .json({ error: "El rol del usuario no es valido" });
     }
 
     if (!rol.authorize(permisos).success) {

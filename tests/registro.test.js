@@ -15,9 +15,9 @@ import { eq, inArray, like } from "drizzle-orm";
  * Test de integracion de HU-1 (registro de usuario propietario).
  *
  * Corre contra la base real, porque lo que se verifica es justamente el
- * encadenado que arma Better Auth mas el hook de creacion del comercio: user,
- * organization, member y comercio en una sola transaccion. Mockear la base
- * dejaria sin probar lo unico que importa aca.
+ * encadenado que arma Better Auth mas el hook de creacion del comercio:
+ * Better Auth crea el `user` y el hook crea `organization`, `member` y `comercio`
+ * en una sola transaccion. Mockear la base dejaria sin probar lo unico que importa aca.
  *
  * Cada corrida usa un correo unico y limpia lo suyo al final.
  */

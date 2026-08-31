@@ -67,12 +67,25 @@ describe("requirePermission", () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  test("responde 401 ante un rol desconocido", () => {
+  test("responde 403 ante un rol desconocido, no 401", () => {
     const next = jest.fn();
     const res = armarRes();
 
+    // Hay sesion (viene `rol`), lo invalido es el rol. Un 401 haria que el
+    // front deslogueara y entrara en loop de login.
     requirePermission({ producto: ["read"] })({ rol: "intruso" }, res, next);
 
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test("responde 401 cuando no hay sesion", () => {
+    const next = jest.fn();
+    const res = armarRes();
+
+    requirePermission({ producto: ["read"] })({}, res, next);
+
+    expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
   });
 });

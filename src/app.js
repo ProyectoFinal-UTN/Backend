@@ -21,20 +21,57 @@ app.use(cors({ origin: origenesPermitidos, credentials: true }));
 
 /**
  * @openapi
+ * /api/auth/sign-up/email:
+ *   post:
+ *     summary: Registro de un usuario propietario (HU-1)
+ *     description: >
+ *       Crea la cuenta y, en la misma operacion, todo lo que hace falta para
+ *       que el usuario sea propietario de un comercio: la `organization` que
+ *       actua de tenant, la fila en `member` con rol `propietario` (RF9) y el
+ *       `comercio` con datos por defecto, que se completan luego en HU-6.
+ *
+ *
+ *       La contrasena se guarda con hash bcrypt de 12 rondas, nunca en texto
+ *       plano (RNF4). El registro deja la sesion iniciada.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email, password]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Comercio de Ana
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *                 minLength: 8
+ *     responses:
+ *       200:
+ *         description: Cuenta creada. Devuelve el usuario y setea la cookie de sesion.
+ *       422:
+ *         description: >
+ *           El correo ya esta registrado
+ *           (`USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`).
+ *
  * /api/auth/{ruta}:
  *   post:
- *     summary: Endpoints de autenticacion gestionados por Better Auth
+ *     summary: Resto de los endpoints de autenticacion (Better Auth)
  *     description: >
- *       Better Auth expone aca todo el ciclo de sesion (registro, login,
- *       logout, recuperacion de contrasena) y los endpoints de organizacion.
- *       El catalogo completo y actualizado esta en `/api/auth/reference`.
+ *       Better Auth expone aca el resto del ciclo de sesion (login, logout,
+ *       recuperacion de contrasena) y los endpoints de organizacion.
  *     tags: [Auth]
  *     parameters:
  *       - in: path
  *         name: ruta
  *         required: true
  *         schema: { type: string }
- *         description: "Ruta interna de Better Auth, por ejemplo: sign-up/email"
+ *         description: "Ruta interna de Better Auth, por ejemplo: sign-in/email"
  *     responses:
  *       200:
  *         description: Respuesta del endpoint de Better Auth

@@ -15,6 +15,13 @@
       "when": 1787859237083,
       "tag": "0001_quiet_scalphunter",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788188425737,
+      "tag": "0002_fantastic_dark_phoenix",
+      "breakpoints": true
     }
   ]
 }

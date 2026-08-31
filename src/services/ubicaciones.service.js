@@ -74,7 +74,6 @@ export async function listarUbicaciones(comercioId) {
     .select({
       id: ubicacion.id,
       nombre: ubicacion.nombre,
-      createdAt: ubicacion.createdAt,
     })
     .from(ubicacion)
     .where(eq(ubicacion.comercioId, comercioId))
@@ -91,7 +90,6 @@ export async function crearUbicacion(comercioId, nombreCrudo) {
       .returning({
         id: ubicacion.id,
         nombre: ubicacion.nombre,
-        createdAt: ubicacion.createdAt,
       });
 
     return creada;

@@ -9,6 +9,9 @@ export default {
   testEnvironment: "node",
   transform: {},
   testMatch: ["**/tests/**/*.test.js"],
+  // Los tests de integracion registran usuarios contra Neon: bcrypt con 12
+  // rondas mas la latencia de red no entran en los 5 segundos por defecto.
+  testTimeout: 30000,
   collectCoverageFrom: [
     "src/**/*.js",
     "!src/index.js",

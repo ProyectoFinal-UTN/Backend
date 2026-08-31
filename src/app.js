@@ -5,6 +5,8 @@ import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./lib/auth.js";
+import configuracionRoutes from "./routes/configuracion.routes.js";
+import ubicacionesRoutes from "./routes/ubicaciones.routes.js";
 
 export const app = express();
 
@@ -118,10 +120,22 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
+app.use("/api/ubicaciones", ubicacionesRoutes);
+app.use("/api/configuracion", configuracionRoutes);
+
 // Manejador de errores: cierra la cadena para que un throw en un service no
 // deje la request colgada. Va siempre ultimo.
+//
+// Los errores de negocio traen su propio `status` y su mensaje se devuelve tal
+// cual. Un 500 es un bug: se loguea entero para poder diagnosticarlo, pero al
+// cliente se le manda un mensaje generico para no filtrar detalles internos.
 app.use((error, req, res, _next) => {
   const status = error.status || error.statusCode || 500;
+
+  if (status === 500) {
+    console.error(`[${req.method} ${req.originalUrl}]`, error);
+  }
+
   res.status(status).json({
     error: status === 500 ? "Error interno del servidor" : error.message,
   });

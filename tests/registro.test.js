@@ -131,6 +131,20 @@ describe("POST /api/auth/sign-up/email", () => {
     expect(credencial.password).toHaveLength(60);
   });
 
+  test("no acepta contrasenas mas largas de lo que bcrypt puede distinguir", async () => {
+    // bcrypt ignora todo lo que pase de 72 bytes: sin este tope, dos frases
+    // que compartan ese prefijo servirian indistintamente para entrar.
+    const respuesta = await request(app)
+      .post("/api/auth/sign-up/email")
+      .send({
+        name: "Clave larguisima",
+        email: correo("larga"),
+        password: "a".repeat(73),
+      });
+
+    expect(respuesta.status).toBeGreaterThanOrEqual(400);
+  });
+
   test("no permite contrasenas mas cortas que el minimo", async () => {
     const respuesta = await request(app)
       .post("/api/auth/sign-up/email")

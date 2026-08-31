@@ -67,6 +67,12 @@ export const auth = betterAuth({
     enabled: true,
     minPasswordLength: 8,
 
+    // bcrypt ignora todo lo que pase de 72 bytes: dos contrasenas que
+    // compartan ese prefijo son intercambiables. El default de Better Auth es
+    // 128, asi que sin este tope alguien con una frase larga tendria menos
+    // seguridad de la que cree. Se corta en 72 y se le avisa.
+    maxPasswordLength: 72,
+
     // `autoSignIn` queda en su default (true) a propósito.
     //
     // Con `autoSignIn: false`, Better Auth responde a un registro con correo
@@ -96,10 +102,25 @@ export const auth = betterAuth({
         // comercio `requireAuth` lo rechaza con 403. Las tres se crean acá,
         // en una transacción, apenas nace el usuario (HU-1).
         after: async (user) => {
-          await crearComercioParaPropietario({
-            userId: user.id,
-            email: user.email,
-          });
+          // Este hook corre DESPUES de que la transaccion del alta commitea
+          // (Better Auth lo encola con queueAfterTransactionHook), asi que un
+          // throw aca ya no revierte al usuario: quedaria existiendo sin
+          // comercio y con 403 en todo endpoint de negocio.
+          //
+          // Por eso el error se loguea entero en vez de propagarse, y la
+          // reparacion la hace `obtenerContextoDeComercio` en el proximo
+          // pedido con sesion.
+          try {
+            await crearComercioParaPropietario({
+              userId: user.id,
+              email: user.email,
+            });
+          } catch (error) {
+            console.error(
+              `[auth] no se pudo crear el comercio de ${user.email}; se repara en el proximo pedido`,
+              error,
+            );
+          }
         },
       },
     },
@@ -117,6 +138,16 @@ export const auth = betterAuth({
       ac,
       roles,
       creatorRole: ROLES.PROPIETARIO,
+
+      // El plugin expone `organization/create` bajo /api/auth/*, y por defecto
+      // deja que cualquier usuario logueado cree una organizacion y la active.
+      // Esa organizacion nace sin fila en `comercio`, con lo cual `requireAuth`
+      // pasaria a responder 403 en todos los endpoints de negocio: el usuario
+      // se romperia su propia cuenta.
+      //
+      // El producto tiene un comercio por usuario y lo crea el registro, asi
+      // que la via directa se cierra.
+      allowUserToCreateOrganization: false,
     }),
   ],
 });

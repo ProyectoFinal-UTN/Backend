@@ -17,8 +17,8 @@ export function generarSlug(texto) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
+    .slice(0, 40)
+    .replace(/^-+|-+$/g, "");
 
   // El sufijo evita colisiones entre dos comercios con el mismo nombre:
   // `organization.slug` es unique y un choque abortaria el registro.

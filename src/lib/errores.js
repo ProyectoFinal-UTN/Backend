@@ -21,7 +21,7 @@ export const PG_UNIQUE_VIOLATION = "23505";
 export const PG_INVALID_TEXT_REPRESENTATION = "22P02";
 
 /**
- * Formato de UUID v4 tal como lo genera Postgres con `gen_random_uuid()`.
+ * Formato de UUID tal como lo genera Postgres con `gen_random_uuid()`.
  *
  * Hace falta chequearlo antes de mandar un id a una query: si no es un UUID
  * valido, Postgres tira 22P02 y el error sale como 500 en vez del 404 que

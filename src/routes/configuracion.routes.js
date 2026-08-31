@@ -1,5 +1,5 @@
 import { Router } from "express";
-import * as controller from "../controllers/ubicaciones.controller.js";
+import * as controller from "../controllers/configuracion.controller.js";
 import {
   requireAuth,
   requirePermission,
@@ -38,11 +38,7 @@ router.use(requireAuth);
  *       401:
  *         description: No hay sesión activa
  */
-router.get(
-  "/",
-  requirePermission({ comercio: ["read"] }),
-  controller.verConfiguracion,
-);
+router.get("/", requirePermission({ comercio: ["read"] }), controller.ver);
 
 /**
  * @openapi

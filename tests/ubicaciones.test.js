@@ -136,6 +136,64 @@ describe("Ubicaciones de stock", () => {
     expect(respuesta.body.error).toMatch(/ya existe/i);
   });
 
+  test("dos altas simultáneas del mismo nombre no rompen con 500", async () => {
+    // El chequeo previo de duplicados tiene una ventana entre el SELECT y el
+    // INSERT: dos pedidos a la vez la atraviesan y chocan contra el unique.
+    // Una tiene que crear y la otra recibir 409, nunca un 500.
+    const [una, otra] = await Promise.all([
+      request(app)
+        .post("/api/ubicaciones")
+        .set("Cookie", propietarioA.cookie)
+        .send({ nombre: "Simultanea" }),
+      request(app)
+        .post("/api/ubicaciones")
+        .set("Cookie", propietarioA.cookie)
+        .send({ nombre: "Simultanea" }),
+    ]);
+
+    const codigos = [una.status, otra.status].sort();
+    expect(codigos).toEqual([201, 409]);
+  });
+
+  test("rechaza un nombre más largo que el máximo, tanto al crear como al renombrar", async () => {
+    const largo = "x".repeat(101);
+
+    const alCrear = await request(app)
+      .post("/api/ubicaciones")
+      .set("Cookie", propietarioA.cookie)
+      .send({ nombre: largo });
+
+    expect(alCrear.status).toBe(400);
+
+    const creada = await request(app)
+      .post("/api/ubicaciones")
+      .set("Cookie", propietarioA.cookie)
+      .send({ nombre: "Para renombrar largo" });
+
+    const alRenombrar = await request(app)
+      .put(`/api/ubicaciones/${creada.body.id}`)
+      .set("Cookie", propietarioA.cookie)
+      .send({ nombre: largo });
+
+    // Antes esto reventaba con 500 porque solo el POST validaba el largo.
+    expect(alRenombrar.status).toBe(400);
+  });
+
+  test("un id que no es UUID devuelve 404, no 500", async () => {
+    const borrado = await request(app)
+      .delete("/api/ubicaciones/no-es-un-uuid")
+      .set("Cookie", propietarioA.cookie);
+
+    expect(borrado.status).toBe(404);
+
+    const renombrado = await request(app)
+      .put("/api/ubicaciones/12345")
+      .set("Cookie", propietarioA.cookie)
+      .send({ nombre: "Cualquiera" });
+
+    expect(renombrado.status).toBe(404);
+  });
+
   test("renombra una ubicación existente", async () => {
     const creada = await request(app)
       .post("/api/ubicaciones")
@@ -273,25 +331,41 @@ describe("Configuración general", () => {
   });
 });
 
+describe("Creación directa de organizaciones", () => {
+  test("está cerrada, para que nadie se rompa su propia cuenta", async () => {
+    // El plugin de Better Auth expone este endpoint y por defecto lo permite.
+    // La organización nacería sin fila en `comercio` y quedaría activa, con lo
+    // cual requireAuth pasaría a responder 403 en todos los endpoints.
+    const respuesta = await request(app)
+      .post("/api/auth/organization/create")
+      .set("Cookie", propietarioA.cookie)
+      .send({ name: "Comercio paralelo", slug: `paralelo-${SUFIJO}` });
+
+    expect(respuesta.status).toBeGreaterThanOrEqual(400);
+
+    // Y el comercio original sigue funcionando.
+    const sigueAndando = await request(app)
+      .get("/api/configuracion")
+      .set("Cookie", propietarioA.cookie);
+
+    expect(sigueAndando.status).toBe(200);
+  });
+});
+
 describe("Restricciones por rol", () => {
   test("un empleado puede leer pero no crear ubicaciones", async () => {
     const empleado = await registrarComercio("empleado");
 
     // Se le baja el rol directamente en la base: la gestión de roles es HU-4.
+    const [fila] = await db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.email, empleado.email));
+
     await db
       .update(member)
       .set({ role: "empleado" })
-      .where(
-        eq(
-          member.userId,
-          (
-            await db
-              .select({ id: user.id })
-              .from(user)
-              .where(eq(user.email, empleado.email))
-          )[0].id,
-        ),
-      );
+      .where(eq(member.userId, fila.id));
 
     const lectura = await request(app)
       .get("/api/ubicaciones")

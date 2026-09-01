@@ -231,6 +231,17 @@ async function resolverUbicacionParaAlta(tx, comercioId, ubicacionIdCrudo) {
     )
     .limit(1);
 
+  // Solo alcanzable si esa fila se borro justo entre el onConflictDoNothing y
+  // este SELECT (por ejemplo, via DELETE /api/ubicaciones/:id de HU-8). Sin
+  // este chequeo, `existente.id` tiraria un TypeError sin status que llegaria
+  // al cliente como un 500 sin contexto.
+  if (!existente) {
+    throw new ErrorDeNegocio(
+      "No se pudo resolver la ubicación por defecto",
+      500,
+    );
+  }
+
   return existente.id;
 }
 

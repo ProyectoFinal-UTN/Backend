@@ -45,6 +45,40 @@ describe("buscarEnOpenFoodFacts", () => {
     );
   });
 
+  test("recorta un nombre mas largo que la columna (150) a ese limite", async () => {
+    const nombreLargo = "x".repeat(200);
+
+    mockearFetch(async () => ({
+      ok: true,
+      json: async () => ({
+        status: 1,
+        product: { product_name: nombreLargo, categories: "Bebidas" },
+      }),
+    }));
+
+    const resultado = await buscarEnOpenFoodFacts(CODIGO);
+
+    expect(resultado.nombre).toHaveLength(150);
+    expect(resultado.nombre).toBe(nombreLargo.slice(0, 150));
+  });
+
+  test("recorta una categoria mas larga que la columna (100) a ese limite", async () => {
+    const categoriaLarga = "y".repeat(150);
+
+    mockearFetch(async () => ({
+      ok: true,
+      json: async () => ({
+        status: 1,
+        product: { product_name: "Producto", categories: categoriaLarga },
+      }),
+    }));
+
+    const resultado = await buscarEnOpenFoodFacts(CODIGO);
+
+    expect(resultado.categoria).toHaveLength(100);
+    expect(resultado.categoria).toBe(categoriaLarga.slice(0, 100));
+  });
+
   test("devuelve null cuando Open Food Facts no tiene el producto (status 0)", async () => {
     mockearFetch(async () => ({
       ok: true,

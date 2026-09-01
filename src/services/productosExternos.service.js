@@ -34,7 +34,11 @@ export async function buscarEnOpenFoodFacts(codigoBarras) {
       return null;
     }
 
-    const nombre = datos.product.product_name?.trim() || null;
+    // Recortado al largo de la columna `nombre`: Open Food Facts a veces
+    // devuelve nombres largos (marca + variante + presentacion todo junto), y
+    // una sugerencia que la propia validacion del alta va a rechazar por
+    // larga es peor que una recortada.
+    const nombre = datos.product.product_name?.trim().slice(0, 150) || null;
     // "categories" en Open Food Facts es texto libre separado por comas; se
     // toma solo la primera como sugerencia simple, recortada al largo de la
     // columna `categoria`.

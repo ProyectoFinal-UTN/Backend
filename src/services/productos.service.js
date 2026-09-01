@@ -217,10 +217,15 @@ async function resolverUbicacionParaAlta(tx, comercioId, ubicacionIdCrudo) {
     return existente.id;
   }
 
+  // `orderBy` es necesario: sin el, un `LIMIT 1` no tiene ninguna garantia de
+  // que devuelva siempre la misma fila entre corridas (Postgres no promete un
+  // orden fisico), asi que altas sucesivas sin `ubicacionId` podrian caer en
+  // ubicaciones distintas si el comercio tiene mas de una.
   const [primera] = await tx
     .select({ id: ubicacion.id })
     .from(ubicacion)
     .where(eq(ubicacion.comercioId, comercioId))
+    .orderBy(asc(ubicacion.createdAt))
     .limit(1);
 
   if (primera) {

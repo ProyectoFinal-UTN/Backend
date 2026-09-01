@@ -180,6 +180,24 @@ describe("Alta de productos", () => {
     expect(respuesta.body.stock.ubicacionId).toBe(ubicacion.id);
   });
 
+  test("con varias ubicaciones, altas sucesivas sin ubicacionId van siempre a la primera creada", async () => {
+    const propietarioC = await registrarComercio("orden-ubicaciones");
+    const primera = await crearUbicacionDePrueba(propietarioC.cookie, "Depósito");
+    await crearUbicacionDePrueba(propietarioC.cookie, "Local");
+
+    const unProducto = await request(app)
+      .post("/api/productos")
+      .set("Cookie", propietarioC.cookie)
+      .send(productoValido());
+    const otroProducto = await request(app)
+      .post("/api/productos")
+      .set("Cookie", propietarioC.cookie)
+      .send(productoValido());
+
+    expect(unProducto.body.stock.ubicacionId).toBe(primera.id);
+    expect(otroProducto.body.stock.ubicacionId).toBe(primera.id);
+  });
+
   test("rechaza una ubicación que no es de este comercio", async () => {
     const ubicacionDeB = await crearUbicacionDePrueba(propietarioB.cookie, "Depósito de B");
 

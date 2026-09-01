@@ -277,14 +277,18 @@ export const producto = pgTable(
  *
  * Cache del libro de movimientos (ver data-model.md): una fila por
  * `(producto, ubicacion)`, se actualiza siempre en la misma transaccion que
- * el movimiento que la origina. No lleva `comercio_id` propio a proposito:
- * su alcance de tenant es transitivo via `producto.comercioId`, toda query
- * sobre esta tabla hace join con `producto` y filtra por ese campo.
+ * el movimiento que la origina. Lleva `comercio_id` propio, denormalizado
+ * desde `producto.comercioId`, para poder filtrar sin depender de acordarse
+ * de hacer el join con `producto` en cada query futura — un producto nunca
+ * cambia de comercio, asi que no hay riesgo de que se desincronice.
  */
 export const stock = pgTable(
   "stock",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    comercioId: uuid("comercio_id")
+      .notNull()
+      .references(() => comercio.id, { onDelete: "cascade" }),
     productoId: uuid("producto_id")
       .notNull()
       .references(() => producto.id, { onDelete: "cascade" }),
@@ -305,6 +309,7 @@ export const stock = pgTable(
     ),
     index("stock_productoId_idx").on(table.productoId),
     index("stock_ubicacionId_idx").on(table.ubicacionId),
+    index("stock_comercioId_idx").on(table.comercioId),
   ],
 );
 

@@ -305,6 +305,7 @@ export async function crearProducto(comercioId, datosCrudos = {}) {
       const [nuevoStock] = await tx
         .insert(stock)
         .values({
+          comercioId,
           productoId: nuevoProducto.id,
           ubicacionId,
           cantidad: datos.stockActual,

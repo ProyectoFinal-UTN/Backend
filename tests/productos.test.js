@@ -3,7 +3,7 @@ import request from "supertest";
 import { eq, inArray, like } from "drizzle-orm";
 import { app } from "../src/app.js";
 import { cerrarConexion, db } from "../src/db/client.js";
-import { comercio, member, organization, user } from "../src/db/schema.js";
+import { comercio, member, organization, stock, user } from "../src/db/schema.js";
 
 /**
  * Test de integracion de HU-9 (alta, edicion y baja de productos).
@@ -124,6 +124,28 @@ describe("Alta de productos", () => {
       .set("Cookie", propietarioA.cookie);
 
     expect(ubicaciones.body.map((u) => u.nombre)).toContain("Principal");
+  });
+
+  test("la fila de stock queda con el comercio_id de la sesión (denormalizado)", async () => {
+    const creado = await request(app)
+      .post("/api/productos")
+      .set("Cookie", propietarioA.cookie)
+      .send(productoValido());
+
+    const [filaStock] = await db
+      .select({ comercioId: stock.comercioId })
+      .from(stock)
+      .where(eq(stock.id, creado.body.stock.id));
+
+    const [filaComercio] = await db
+      .select({ comercioId: comercio.id })
+      .from(comercio)
+      .innerJoin(organization, eq(organization.id, comercio.organizationId))
+      .innerJoin(member, eq(member.organizationId, organization.id))
+      .innerJoin(user, eq(user.id, member.userId))
+      .where(eq(user.email, propietarioA.email));
+
+    expect(filaStock.comercioId).toBe(filaComercio.comercioId);
   });
 
   test("reutiliza una ubicación existente en vez de crear otra 'Principal'", async () => {

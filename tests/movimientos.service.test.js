@@ -117,6 +117,20 @@ describe("validarDatosMovimiento — cantidad", () => {
       -4,
     );
   });
+
+  test("acepta el máximo que entra en un integer de Postgres", () => {
+    expect(
+      validarDatosMovimiento(movimiento({ tipo: "compra", cantidad: 2147483647 }))
+        .cantidad,
+    ).toBe(2147483647);
+  });
+
+  test("rechaza una cantidad que desbordaría la columna integer", () => {
+    // Sin este tope el INSERT falla con 22003 y sale como 500, no como 400.
+    expect(() =>
+      validarDatosMovimiento(movimiento({ cantidad: 3000000000 })),
+    ).toThrow(/cantidad no puede superar/i);
+  });
 });
 
 describe("validarDatosMovimiento — producto, ubicación y proveedor", () => {

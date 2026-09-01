@@ -29,6 +29,9 @@ const SIGNO_POR_TIPO = { compra: +1, venta: -1, merma: -1 };
 const TIPOS_ACEPTADOS = [...Object.keys(SIGNO_POR_TIPO), "ajuste"];
 const SENTIDOS_VALIDOS = { entrada: +1, salida: -1 };
 
+/** Maximo de un `integer` de Postgres, que es el tipo de `cantidad`. */
+const CANTIDAD_MAXIMA = 2147483647;
+
 /**
  * Valida y normaliza los datos de un movimiento.
  *
@@ -61,6 +64,16 @@ export function validarDatosMovimiento(datosCrudos = {}) {
   if (!Number.isInteger(cantidad) || cantidad <= 0) {
     throw new ErrorDeNegocio(
       "La cantidad debe ser un número entero mayor a 0",
+      400,
+    );
+  }
+
+  // El tope tiene que estar aca y no solo en la base: `movimiento.cantidad` es
+  // un integer de Postgres, y un valor mas grande lo hace fallar con 22003, que
+  // sale como 500 en vez del 400 que corresponde a un dato invalido.
+  if (cantidad > CANTIDAD_MAXIMA) {
+    throw new ErrorDeNegocio(
+      `La cantidad no puede superar ${CANTIDAD_MAXIMA}`,
       400,
     );
   }

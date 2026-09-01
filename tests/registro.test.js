@@ -40,10 +40,16 @@ afterAll(async () => {
 
   const ids = creadas.map((fila) => fila.organizationId);
 
+  // El comercio va primero, antes que el usuario: `movimiento.usuario_id` es
+  // `onDelete: restrict` (HU-13), asi que borrar un usuario que registro
+  // movimientos falla mientras esas filas existan.
+  if (ids.length > 0) {
+    await db.delete(comercio).where(inArray(comercio.organizationId, ids));
+  }
+
   await db.delete(user).where(like(user.email, patron));
 
   if (ids.length > 0) {
-    await db.delete(comercio).where(inArray(comercio.organizationId, ids));
     await db.delete(organization).where(inArray(organization.id, ids));
   }
 

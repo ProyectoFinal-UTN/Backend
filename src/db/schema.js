@@ -3,6 +3,7 @@ import {
   boolean,
   index,
   integer,
+  pgEnum,
   pgTable,
   text,
   timestamp,
@@ -313,6 +314,81 @@ export const stock = pgTable(
   ],
 );
 
+/**
+ * Tipos de movimiento del libro de stock (HU-13).
+ *
+ * "transferencia" se declara desde ahora aunque el endpoint de HU-13 la
+ * rechace: agregar un valor a un enum de Postgres despues obliga a un
+ * ALTER TYPE ... ADD VALUE en una migracion aparte, y HU-12 —que es la que lo
+ * usa, con dos filas ligadas por `transferencia_id`— es la siguiente en la
+ * fila. Los cinco valores son los de references/data-model.md.
+ */
+export const tipoMovimiento = pgEnum("tipo_movimiento", [
+  "compra",
+  "venta",
+  "ajuste",
+  "merma",
+  "transferencia",
+]);
+
+/**
+ * Libro de movimientos de stock (HU-13). Fuente de verdad del inventario.
+ *
+ * Es append-only: una fila nunca se edita ni se borra, y `cantidad` se guarda
+ * con signo (entrada +, salida -). `stock` es la cache del saldo, y se
+ * actualiza siempre en la misma transaccion que inserta el movimiento que la
+ * origina (ver aplicarMovimiento en services/movimientos.service.js). El
+ * invariante que sostiene todo el modelo es:
+ *
+ *   STOCK.cantidad = SUM(MOVIMIENTO.cantidad) para ese (producto, ubicacion)
+ *
+ * No lleva `createdAt` ni `updatedAt`, a diferencia del resto de las tablas
+ * propias: `fecha` ya es el momento de insercion, y un `updatedAt` contradiria
+ * que la fila no se modifica nunca.
+ */
+export const movimiento = pgTable(
+  "movimiento",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    comercioId: uuid("comercio_id")
+      .notNull()
+      .references(() => comercio.id, { onDelete: "cascade" }),
+    // restrict y no cascade: el libro es append-only, asi que borrar un
+    // producto o una ubicacion no puede llevarse puesto su historial.
+    // `producto` ya se borra logicamente (`activo`); esto le da a `ubicacion`
+    // la proteccion que pedia el comentario de eliminarUbicacion.
+    productoId: uuid("producto_id")
+      .notNull()
+      .references(() => producto.id, { onDelete: "restrict" }),
+    ubicacionId: uuid("ubicacion_id")
+      .notNull()
+      .references(() => ubicacion.id, { onDelete: "restrict" }),
+    // text y no uuid: los ids de Better Auth son text (ver la tabla `user`).
+    usuarioId: text("usuario_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    tipo: tipoMovimiento("tipo").notNull(),
+    cantidad: integer("cantidad").notNull(),
+    // FK pendiente cuando exista PROVEEDOR (HU-19)
+    proveedorId: uuid("proveedor_id"),
+    // FK pendiente + logica de 2 filas ligadas cuando se implemente HU-12
+    transferenciaId: uuid("transferencia_id"),
+    fecha: timestamp("fecha").defaultNow().notNull(),
+  },
+  (table) => [
+    index("movimiento_comercioId_idx").on(table.comercioId),
+    // Es el indice del recalculo del saldo desde el libro: SUM(cantidad)
+    // filtrando por el par (producto, ubicacion).
+    index("movimiento_producto_ubicacion_idx").on(
+      table.productoId,
+      table.ubicacionId,
+    ),
+    index("movimiento_ubicacionId_idx").on(table.ubicacionId),
+    // Para el filtro por rango de fechas del historial (HU-14).
+    index("movimiento_fecha_idx").on(table.fecha),
+  ],
+);
+
 /* ---------------------------------------------------------------------------
  * Relaciones
  * ------------------------------------------------------------------------- */
@@ -367,6 +443,7 @@ export const comercioRelations = relations(comercio, ({ many, one }) => ({
   }),
   ubicaciones: many(ubicacion),
   productos: many(producto),
+  movimientos: many(movimiento),
 }));
 
 export const ubicacionRelations = relations(ubicacion, ({ one, many }) => ({
@@ -375,6 +452,7 @@ export const ubicacionRelations = relations(ubicacion, ({ one, many }) => ({
     references: [comercio.id],
   }),
   stocks: many(stock),
+  movimientos: many(movimiento),
 }));
 
 export const productoRelations = relations(producto, ({ one, many }) => ({
@@ -383,6 +461,7 @@ export const productoRelations = relations(producto, ({ one, many }) => ({
     references: [comercio.id],
   }),
   stocks: many(stock),
+  movimientos: many(movimiento),
 }));
 
 export const stockRelations = relations(stock, ({ one }) => ({
@@ -393,5 +472,26 @@ export const stockRelations = relations(stock, ({ one }) => ({
   ubicacion: one(ubicacion, {
     fields: [stock.ubicacionId],
     references: [ubicacion.id],
+  }),
+}));
+
+// `proveedorId` y `transferenciaId` no figuran aca: sus tablas todavia no
+// existen (HU-19 y HU-12). Se agregan junto con la FK cuando se creen.
+export const movimientoRelations = relations(movimiento, ({ one }) => ({
+  comercio: one(comercio, {
+    fields: [movimiento.comercioId],
+    references: [comercio.id],
+  }),
+  producto: one(producto, {
+    fields: [movimiento.productoId],
+    references: [producto.id],
+  }),
+  ubicacion: one(ubicacion, {
+    fields: [movimiento.ubicacionId],
+    references: [ubicacion.id],
+  }),
+  usuario: one(user, {
+    fields: [movimiento.usuarioId],
+    references: [user.id],
   }),
 }));

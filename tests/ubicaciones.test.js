@@ -53,11 +53,17 @@ afterAll(async () => {
 
   const ids = creadas.map((fila) => fila.organizationId);
 
+  // El comercio va primero, antes que el usuario: `movimiento.usuario_id` es
+  // `onDelete: restrict` (HU-13), asi que borrar un usuario que registro
+  // movimientos falla mientras esas filas existan. Borrar el comercio se las
+  // lleva por cascada junto con `ubicacion`.
+  if (ids.length > 0) {
+    await db.delete(comercio).where(inArray(comercio.organizationId, ids));
+  }
+
   await db.delete(user).where(like(user.email, patron));
 
   if (ids.length > 0) {
-    // `ubicacion` cae por cascada al borrar su comercio.
-    await db.delete(comercio).where(inArray(comercio.organizationId, ids));
     await db.delete(organization).where(inArray(organization.id, ids));
   }
 
@@ -226,6 +232,32 @@ describe("Ubicaciones de stock", () => {
       .set("Cookie", propietarioA.cookie);
 
     expect(repetida.status).toBe(404);
+  });
+
+  test("no elimina una ubicación que tiene movimientos registrados (HU-13)", async () => {
+    const propietario = await registrarComercio("ubicacion-con-movimientos");
+
+    // El alta del producto crea la ubicación "Principal" y su movimiento de
+    // stock inicial, que es justamente lo que debe bloquear el borrado.
+    const producto = await request(app)
+      .post("/api/productos")
+      .set("Cookie", propietario.cookie)
+      .send({
+        nombre: "Producto con historial",
+        codigoBarras: `7891${Date.now().toString().slice(-9)}`,
+        categoria: "Bebidas",
+        unidadMedida: "unidad",
+        umbralMinimo: 1,
+        stockActual: 5,
+      });
+    expect(producto.status).toBe(201);
+
+    const borrada = await request(app)
+      .delete(`/api/ubicaciones/${producto.body.stock.ubicacionId}`)
+      .set("Cookie", propietario.cookie);
+
+    expect(borrada.status).toBe(409);
+    expect(borrada.body.error).toMatch(/movimientos/i);
   });
 });
 

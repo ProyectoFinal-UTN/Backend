@@ -4,6 +4,7 @@ import { ubicacion } from "../db/schema.js";
 import {
   ErrorDeNegocio,
   PG_UNIQUE_VIOLATION,
+  esBorradoBloqueadoPorFk,
   esUuid,
 } from "../lib/errores.js";
 
@@ -124,17 +125,36 @@ export async function renombrarUbicacion(comercioId, idCrudo, nombreCrudo) {
 /**
  * Elimina una ubicacion.
  *
- * Cuando existan `stock` y `movimiento` (HU-13) hay que impedir el borrado si
- * la ubicacion tiene movimientos: el libro es append-only y borrar su ubicacion
- * dejaria el historial sin referencia. Hoy no hay nada que la referencie.
+ * Una ubicacion con movimientos no se puede borrar: el libro es append-only y
+ * borrarla dejaria el historial sin referencia. Eso lo garantiza el
+ * `onDelete: "restrict"` de `movimiento.ubicacionId`, y aca solo se traduce el
+ * error de la base al 409 que corresponde — igual que con los duplicados, la
+ * base es la que decide de verdad, porque entre un chequeo previo y el DELETE
+ * hay una ventana que un movimiento simultaneo puede atravesar.
+ *
+ * El `stock` en cero, en cambio, si cae por cascada: es una cache reconstruible
+ * desde el libro, no un dato que se pierda.
  */
 export async function eliminarUbicacion(comercioId, idCrudo) {
   const id = exigirIdValido(idCrudo);
 
-  const [eliminada] = await db
-    .delete(ubicacion)
-    .where(and(eq(ubicacion.id, id), eq(ubicacion.comercioId, comercioId)))
-    .returning({ id: ubicacion.id });
+  let eliminada;
+
+  try {
+    [eliminada] = await db
+      .delete(ubicacion)
+      .where(and(eq(ubicacion.id, id), eq(ubicacion.comercioId, comercioId)))
+      .returning({ id: ubicacion.id });
+  } catch (error) {
+    if (esBorradoBloqueadoPorFk(error)) {
+      throw new ErrorDeNegocio(
+        "La ubicación tiene movimientos registrados y no se puede eliminar",
+        409,
+      );
+    }
+
+    throw error;
+  }
 
   if (!eliminada) {
     throw new ErrorDeNegocio("La ubicación no existe", 404);

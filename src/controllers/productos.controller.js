@@ -30,6 +30,7 @@ export async function crear(req, res, next) {
   try {
     const creado = await productosService.crearProducto(
       req.comercioId,
+      req.usuario.id,
       req.body,
     );
     res.status(201).json(creado);

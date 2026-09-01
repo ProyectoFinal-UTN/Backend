@@ -45,7 +45,11 @@ router.use(requireAuth);
  *               cantidad:
  *                 type: integer
  *                 minimum: 1
+ *                 maximum: 2147483647
  *                 example: 3
+ *                 description: >
+ *                   Magnitud positiva, siempre. Tiene que ser un número JSON,
+ *                   no una cadena.
  *               sentido:
  *                 type: string
  *                 enum: [entrada, salida]
@@ -77,7 +81,10 @@ router.use(requireAuth);
  *       404:
  *         description: El producto o la ubicación no existen en este comercio
  *       409:
- *         description: Stock insuficiente para descontar esa cantidad
+ *         description: >
+ *           El movimiento no entra contra el stock actual: o no hay unidades
+ *           suficientes para descontar, o el saldo resultante superaría el
+ *           máximo de 2147483647.
  */
 router.post(
   "/",

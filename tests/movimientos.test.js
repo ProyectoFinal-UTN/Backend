@@ -282,6 +282,22 @@ describe("Stock insuficiente", () => {
     expect(await leerStock(producto.stock.id)).toBe(5);
   });
 
+  test("una entrada que desbordaría el saldo se rechaza con 409, no con 500", async () => {
+    // El tope de la entrada sola no alcanza: 2147483647 es una cantidad valida
+    // en si misma; lo que no entra en el integer es el saldo resultante.
+    const producto = await crearProducto(propietarioA.cookie, 20);
+
+    const respuesta = await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "compra",
+      cantidad: 2147483647,
+    });
+
+    expect(respuesta.status).toBe(409);
+    expect(respuesta.body.error).toMatch(/superaria el maximo/i);
+    expect(await leerStock(producto.stock.id)).toBe(20);
+  });
+
   test("dos ventas simultáneas de las últimas unidades no dejan el stock en negativo", async () => {
     const producto = await crearProducto(propietarioA.cookie, 10);
 

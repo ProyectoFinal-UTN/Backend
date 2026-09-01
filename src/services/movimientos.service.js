@@ -60,20 +60,24 @@ export function validarDatosMovimiento(datosCrudos = {}) {
     );
   }
 
-  const cantidad = Number(datosCrudos.cantidad);
-  if (!Number.isInteger(cantidad) || cantidad <= 0) {
+  // Mismo criterio que `esEnteroNoNegativo` en productos.service.js, para que
+  // los dos modulos entiendan lo mismo por "numero valido":
+  //
+  // - `typeof number` en vez de `Number(...)`: la coercion convierte `true` en
+  //   1 y `[3]` en 3, asi que un campo mal serializado entraria como un
+  //   movimiento real en un libro que despues no se puede editar.
+  // - El tope tiene que estar aca y no solo en la base: `movimiento.cantidad`
+  //   es un integer de Postgres, y un valor mas grande falla en el INSERT con
+  //   22003, que sale como 500 en vez del 400 que corresponde.
+  const cantidad = datosCrudos.cantidad;
+  if (
+    typeof cantidad !== "number" ||
+    !Number.isInteger(cantidad) ||
+    cantidad <= 0 ||
+    cantidad > CANTIDAD_MAXIMA
+  ) {
     throw new ErrorDeNegocio(
-      "La cantidad debe ser un número entero mayor a 0",
-      400,
-    );
-  }
-
-  // El tope tiene que estar aca y no solo en la base: `movimiento.cantidad` es
-  // un integer de Postgres, y un valor mas grande lo hace fallar con 22003, que
-  // sale como 500 en vez del 400 que corresponde a un dato invalido.
-  if (cantidad > CANTIDAD_MAXIMA) {
-    throw new ErrorDeNegocio(
-      `La cantidad no puede superar ${CANTIDAD_MAXIMA}`,
+      `La cantidad debe ser un número entero entre 1 y ${CANTIDAD_MAXIMA}`,
       400,
     );
   }
@@ -257,6 +261,18 @@ export async function aplicarMovimiento(
   if (cantidad < 0 && disponible + cantidad < 0) {
     throw new ErrorDeNegocio(
       `Stock insuficiente: hay ${disponible} unidades disponibles y se intentan descontar ${-cantidad}`,
+      409,
+    );
+  }
+
+  // El tope de una entrada sola no alcanza: es el SALDO el que tiene que entrar
+  // en el integer de `stock.cantidad`. Sin este chequeo, una entrada valida
+  // sobre un stock ya alto desborda en el upsert con 22003 y sale como 500.
+  // Es 409 y no 400 por lo mismo que el stock insuficiente: el dato es valido,
+  // lo que no entra es el resultado contra el estado actual.
+  if (cantidad > 0 && disponible + cantidad > CANTIDAD_MAXIMA) {
+    throw new ErrorDeNegocio(
+      `El stock resultante superaria el maximo de ${CANTIDAD_MAXIMA} unidades: hay ${disponible} y se intentan sumar ${cantidad}`,
       409,
     );
   }

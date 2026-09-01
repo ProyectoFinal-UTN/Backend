@@ -106,15 +106,16 @@ describe("validarDatosMovimiento — cantidad", () => {
     ["decimal", 1.5],
     ["texto", "muchas"],
     ["ausente", undefined],
+    ["nula", null],
+    // Los tres siguientes son los que `Number(...)` colaria: `Number(true)` da
+    // 1, `Number([3])` da 3 y `Number("4")` da 4. Un campo mal serializado no
+    // puede entrar como movimiento real en un libro que no se puede editar.
+    ["booleana", true],
+    ["un array", [3]],
+    ["numérica pero en string", "4"],
   ])("rechaza una cantidad %s", (_caso, cantidad) => {
     expect(() => validarDatosMovimiento(movimiento({ cantidad }))).toThrow(
       /cantidad/i,
-    );
-  });
-
-  test("acepta una cantidad numérica en string", () => {
-    expect(validarDatosMovimiento(movimiento({ cantidad: "4" })).cantidad).toBe(
-      -4,
     );
   });
 
@@ -129,7 +130,7 @@ describe("validarDatosMovimiento — cantidad", () => {
     // Sin este tope el INSERT falla con 22003 y sale como 500, no como 400.
     expect(() =>
       validarDatosMovimiento(movimiento({ cantidad: 3000000000 })),
-    ).toThrow(/cantidad no puede superar/i);
+    ).toThrow(/cantidad/i);
   });
 });
 

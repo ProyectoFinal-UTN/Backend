@@ -25,6 +25,15 @@ const UNIDADES_VALIDAS = [
   "docena",
 ];
 
+/**
+ * Maximo de un `integer` de Postgres, que es el tipo de `producto.umbral_minimo`
+ * y de `stock.cantidad`. Sin este tope, un valor mas grande pasa la validacion
+ * y recien falla en el INSERT con 22003, que sale como 500 en vez del 400 que
+ * corresponde a un dato invalido. Mismo hueco ya cerrado en HU-13
+ * (movimientos.service.js, CANTIDAD_MAXIMA).
+ */
+const MAXIMO_ENTERO_POSTGRES = 2147483647;
+
 const CAMPOS_PRODUCTO = {
   id: producto.id,
   nombre: producto.nombre,
@@ -36,8 +45,22 @@ const CAMPOS_PRODUCTO = {
   updatedAt: producto.updatedAt,
 };
 
+/**
+ * Exige un `number` de JS real (no coerciona strings/null/arrays), entero,
+ * no negativo, y dentro del rango de un `integer` de Postgres.
+ *
+ * No se usa `Number(valor)` antes de este chequeo a proposito:
+ * `Number(null)`, `Number("")` y `Number([])` dan `0`, asi que un
+ * `{"stockActual": null}` explicito colaria como stock 0 en silencio en vez
+ * de rechazarse como dato invalido.
+ */
 function esEnteroNoNegativo(valor) {
-  return Number.isInteger(valor) && valor >= 0;
+  return (
+    typeof valor === "number" &&
+    Number.isInteger(valor) &&
+    valor >= 0 &&
+    valor <= MAXIMO_ENTERO_POSTGRES
+  );
 }
 
 /**
@@ -105,10 +128,10 @@ export function validarDatosProducto(datosCrudos = {}, { parcial = false } = {})
   }
 
   if (tiene("umbralMinimo")) {
-    const umbralMinimo = Number(datosCrudos.umbralMinimo);
+    const umbralMinimo = datosCrudos.umbralMinimo;
     if (!esEnteroNoNegativo(umbralMinimo)) {
       throw new ErrorDeNegocio(
-        "El umbral mínimo debe ser un número entero mayor o igual a 0",
+        "El umbral mínimo debe ser un número entero entre 0 y 2147483647",
         400,
       );
     }
@@ -116,10 +139,10 @@ export function validarDatosProducto(datosCrudos = {}, { parcial = false } = {})
   }
 
   if (!parcial) {
-    const stockActual = Number(datosCrudos.stockActual);
+    const stockActual = datosCrudos.stockActual;
     if (!esEnteroNoNegativo(stockActual)) {
       throw new ErrorDeNegocio(
-        "El stock actual debe ser un número entero mayor o igual a 0",
+        "El stock actual debe ser un número entero entre 0 y 2147483647",
         400,
       );
     }
@@ -329,6 +352,10 @@ export async function actualizarProducto(comercioId, idCrudo, datosCrudos = {}) 
   }
 
   const datos = validarDatosProducto(datosCrudos, { parcial: true });
+
+  if (Object.keys(datos).length === 0) {
+    throw new ErrorDeNegocio("No se enviaron campos para actualizar", 400);
+  }
 
   try {
     const [actualizado] = await db

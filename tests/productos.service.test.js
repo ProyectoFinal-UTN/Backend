@@ -81,6 +81,18 @@ describe("validarDatosProducto — alta (no parcial)", () => {
     ).toThrow(/umbral mínimo/i);
   });
 
+  test("rechaza un umbral mínimo que desbordaría la columna integer", () => {
+    expect(() =>
+      validarDatosProducto({ ...DATOS_VALIDOS, umbralMinimo: 3000000000 }),
+    ).toThrow(/umbral mínimo/i);
+  });
+
+  test("rechaza un umbral mínimo null (no lo trata como 0)", () => {
+    expect(() =>
+      validarDatosProducto({ ...DATOS_VALIDOS, umbralMinimo: null }),
+    ).toThrow(/umbral mínimo/i);
+  });
+
   test("rechaza un stock actual negativo", () => {
     expect(() =>
       validarDatosProducto({ ...DATOS_VALIDOS, stockActual: -5 }),
@@ -90,6 +102,31 @@ describe("validarDatosProducto — alta (no parcial)", () => {
   test("rechaza cuando falta el stock actual", () => {
     expect(() =>
       validarDatosProducto(sinCampo(DATOS_VALIDOS, "stockActual")),
+    ).toThrow(/stock actual/i);
+  });
+
+  test("rechaza un stock actual que desbordaría la columna integer", () => {
+    // Sin el tope, el INSERT falla con 22003 y sale como 500, no como 400.
+    expect(() =>
+      validarDatosProducto({ ...DATOS_VALIDOS, stockActual: 3000000000 }),
+    ).toThrow(/stock actual/i);
+  });
+
+  test("acepta el máximo que entra en un integer de Postgres", () => {
+    expect(
+      validarDatosProducto({ ...DATOS_VALIDOS, stockActual: 2147483647 }),
+    ).toMatchObject({ stockActual: 2147483647 });
+  });
+
+  test("rechaza un stock actual null (no lo trata como 0)", () => {
+    expect(() =>
+      validarDatosProducto({ ...DATOS_VALIDOS, stockActual: null }),
+    ).toThrow(/stock actual/i);
+  });
+
+  test("rechaza un stock actual como string (exige number, no coerciona)", () => {
+    expect(() =>
+      validarDatosProducto({ ...DATOS_VALIDOS, stockActual: "20" }),
     ).toThrow(/stock actual/i);
   });
 

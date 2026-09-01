@@ -198,7 +198,9 @@ describe("Alta de productos", () => {
     ["unidadMedida", { unidadMedida: "toneladas" }],
     ["umbralMinimo", { umbralMinimo: -1 }],
     ["umbralMinimo", { umbralMinimo: 1.5 }],
+    ["umbralMinimo", { umbralMinimo: 3000000000 }],
     ["stockActual", { stockActual: -5 }],
+    ["stockActual", { stockActual: 3000000000 }],
   ])("rechaza datos inválidos en %s", async (_campo, override) => {
     const respuesta = await request(app)
       .post("/api/productos")
@@ -319,6 +321,20 @@ describe("Edición", () => {
     expect(editado.body.nombre).toBe(creado.body.nombre);
     expect(editado.body).not.toHaveProperty("stockActual");
     expect(editado.body).not.toHaveProperty("stock");
+  });
+
+  test("rechaza con 400 un PUT sin ningún campo para actualizar", async () => {
+    const creado = await request(app)
+      .post("/api/productos")
+      .set("Cookie", propietarioA.cookie)
+      .send(productoValido());
+
+    const editado = await request(app)
+      .put(`/api/productos/${creado.body.id}`)
+      .set("Cookie", propietarioA.cookie)
+      .send({});
+
+    expect(editado.status).toBe(400);
   });
 
   test("rechaza un umbralMinimo inválido en el patch", async () => {

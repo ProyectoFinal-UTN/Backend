@@ -1,7 +1,8 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   index,
+  integer,
   pgTable,
   text,
   timestamp,
@@ -229,6 +230,84 @@ export const ubicacion = pgTable(
   ],
 );
 
+/**
+ * Catalogo de productos del comercio (HU-9).
+ *
+ * El "stock actual" del formulario de alta NO vive aca: PRODUCTO son los
+ * datos del articulo, STOCK es la cantidad por ubicacion (ver mas abajo). El
+ * codigo de barras es unico por comercio, no global: dos comercios distintos
+ * pueden vender el mismo producto con el mismo codigo.
+ *
+ * `activo` habilita el borrado logico: eliminar un producto no borra la fila
+ * (dejaria huerfano su `stock` y, mas adelante, su historial de `movimiento`),
+ * solo lo saca de las lecturas normales.
+ */
+export const producto = pgTable(
+  "producto",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    comercioId: uuid("comercio_id")
+      .notNull()
+      .references(() => comercio.id, { onDelete: "cascade" }),
+    nombre: varchar("nombre", { length: 150 }).notNull(),
+    codigoBarras: varchar("codigo_barras", { length: 64 }).notNull(),
+    categoria: varchar("categoria", { length: 100 }).notNull(),
+    unidadMedida: varchar("unidad_medida", { length: 20 }).notNull(),
+    umbralMinimo: integer("umbral_minimo").default(0).notNull(),
+    activo: boolean("activo").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("producto_comercioId_idx").on(table.comercioId),
+    // Parcial: solo exige unicidad entre productos activos. Sin esto, borrar
+    // un producto (soft delete) bloquearia su codigo de barras para siempre,
+    // porque la fila inactiva seguiria contando para el indice.
+    uniqueIndex("producto_comercio_codigoBarras_uidx")
+      .on(table.comercioId, table.codigoBarras)
+      .where(sql`${table.activo} = true`),
+  ],
+);
+
+/**
+ * Saldo de stock por producto y ubicacion (HU-9 lo crea, HU-13 lo mantiene).
+ *
+ * Cache del libro de movimientos (ver data-model.md): una fila por
+ * `(producto, ubicacion)`, se actualiza siempre en la misma transaccion que
+ * el movimiento que la origina. No lleva `comercio_id` propio a proposito:
+ * su alcance de tenant es transitivo via `producto.comercioId`, toda query
+ * sobre esta tabla hace join con `producto` y filtra por ese campo.
+ */
+export const stock = pgTable(
+  "stock",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productoId: uuid("producto_id")
+      .notNull()
+      .references(() => producto.id, { onDelete: "cascade" }),
+    ubicacionId: uuid("ubicacion_id")
+      .notNull()
+      .references(() => ubicacion.id, { onDelete: "cascade" }),
+    cantidad: integer("cantidad").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("stock_producto_ubicacion_uidx").on(
+      table.productoId,
+      table.ubicacionId,
+    ),
+    index("stock_productoId_idx").on(table.productoId),
+    index("stock_ubicacionId_idx").on(table.ubicacionId),
+  ],
+);
+
 /* ---------------------------------------------------------------------------
  * Relaciones
  * ------------------------------------------------------------------------- */
@@ -282,11 +361,32 @@ export const comercioRelations = relations(comercio, ({ many, one }) => ({
     references: [organization.id],
   }),
   ubicaciones: many(ubicacion),
+  productos: many(producto),
 }));
 
-export const ubicacionRelations = relations(ubicacion, ({ one }) => ({
+export const ubicacionRelations = relations(ubicacion, ({ one, many }) => ({
   comercio: one(comercio, {
     fields: [ubicacion.comercioId],
     references: [comercio.id],
+  }),
+  stocks: many(stock),
+}));
+
+export const productoRelations = relations(producto, ({ one, many }) => ({
+  comercio: one(comercio, {
+    fields: [producto.comercioId],
+    references: [comercio.id],
+  }),
+  stocks: many(stock),
+}));
+
+export const stockRelations = relations(stock, ({ one }) => ({
+  producto: one(producto, {
+    fields: [stock.productoId],
+    references: [producto.id],
+  }),
+  ubicacion: one(ubicacion, {
+    fields: [stock.ubicacionId],
+    references: [ubicacion.id],
   }),
 }));

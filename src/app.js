@@ -6,6 +6,7 @@ import swaggerUi from "swagger-ui-express";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./lib/auth.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
+import productosRoutes from "./routes/productos.routes.js";
 import ubicacionesRoutes from "./routes/ubicaciones.routes.js";
 
 export const app = express();
@@ -166,6 +167,7 @@ app.get("/health", (req, res) => {
 
 app.use("/api/ubicaciones", ubicacionesRoutes);
 app.use("/api/configuracion", configuracionRoutes);
+app.use("/api/productos", productosRoutes);
 
 // Manejador de errores: cierra la cadena para que un throw en un service no
 // deje la request colgada. Va siempre ultimo.

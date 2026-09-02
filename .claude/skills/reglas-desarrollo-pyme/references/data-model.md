@@ -4,7 +4,7 @@ Leé esto antes de tocar `src/db/schema.js`, escribir una migración, o modelar 
 
 ## Multi-tenant: `comercio_id` en todo
 
-El sistema es multi-comercio: varios comercios conviven en la misma base. **Toda tabla de negocio** (`producto`, `ubicacion`, `proveedor`, `movimiento`, `transferencia`, `alerta`, `auditoria`) lleva una columna `comercio_id` que apunta a `comercio`.
+El sistema es multi-comercio: varios comercios conviven en la misma base. **Toda tabla de negocio** (`producto`, `ubicacion`, `proveedor`, `stock`, `movimiento`, `transferencia`, `alerta`, `auditoria`) lleva una columna `comercio_id` que apunta a `comercio`. En `stock` es una columna denormalizada (además de la relación transitiva vía `producto`), agregada a propósito para no depender de acordarse del `join` con `producto` en cada query.
 
 - Ninguna query de lectura o escritura sobre estas tablas puede omitir el filtro por `comercio_id` del usuario logueado.
 - Esto se resuelve en la capa de `service`, tomando el `comercio_id` desde la sesión (no desde un parámetro que mande el cliente — nunca confiar en un `comercio_id` que venga del body o la query string).
@@ -52,7 +52,7 @@ Un producto puede tener varios proveedores y viceversa, vía la tabla `PRODUCTO_
 | `PRODUCTO` | Propia | `comercio_id`, `umbral_minimo` |
 | `PROVEEDOR` | Propia | `comercio_id` |
 | `PRODUCTO_PROVEEDOR` | Propia | N:M |
-| `STOCK` | Propia | Caché, `(producto, ubicacion)` |
+| `STOCK` | Propia | Caché, `(producto, ubicacion)`, `comercio_id` denormalizado |
 | `MOVIMIENTO` | Propia | Fuente de verdad, append-only, cantidad con signo |
 | `TRANSFERENCIA` | Propia | Agrupa 2 `MOVIMIENTO` |
 | `ALERTA` | Propia | Ciclo de vida: activa → resuelta |

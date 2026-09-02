@@ -58,7 +58,12 @@ router.get(
  * @openapi
  * /api/productos/{id}:
  *   get:
- *     summary: Obtiene un producto del comercio por id (HU-9)
+ *     summary: Obtiene un producto del comercio por id, con su stock (HU-9/HU-11)
+ *     description: >
+ *       Además de los datos del producto, incluye `stock`: el saldo
+ *       discriminado por cada ubicación del comercio (con 0 en las que
+ *       todavía no tienen movimientos) y el total, que es la suma de esas
+ *       filas.
  *     tags: [Productos]
  *     parameters:
  *       - in: path
@@ -67,7 +72,30 @@ router.get(
  *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: El producto
+ *         description: El producto, con su stock por ubicación
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string, format: uuid }
+ *                 nombre: { type: string }
+ *                 codigoBarras: { type: string }
+ *                 categoria: { type: string }
+ *                 unidadMedida: { type: string }
+ *                 umbralMinimo: { type: integer }
+ *                 stock:
+ *                   type: object
+ *                   properties:
+ *                     porUbicacion:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           ubicacionId: { type: string, format: uuid }
+ *                           ubicacionNombre: { type: string, example: Depósito }
+ *                           cantidad: { type: integer, example: 12 }
+ *                     total: { type: integer, example: 12 }
  *       404:
  *         description: El producto no existe en este comercio
  */

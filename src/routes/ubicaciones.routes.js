@@ -125,6 +125,10 @@ router.put(
  *         description: El rol no puede eliminar ubicaciones
  *       404:
  *         description: La ubicación no existe en este comercio
+ *       409:
+ *         description: >
+ *           La ubicación tiene movimientos registrados (HU-13). El historial es
+ *           append-only, así que no puede quedarse sin su ubicación.
  */
 router.delete(
   "/:id",

@@ -17,6 +17,26 @@ export class ErrorDeNegocio extends Error {
 /** Codigo de Postgres para violacion de constraint unique. */
 export const PG_UNIQUE_VIOLATION = "23505";
 
+/**
+ * Codigos de Postgres para un DELETE que dejaria filas huerfanas.
+ *
+ * Son dos y hay que mirar los dos: `ON DELETE RESTRICT` chequea en el acto y
+ * tira 23001 (restrict_violation), mientras que `NO ACTION` difiere el chequeo
+ * al final de la sentencia y tira 23503 (foreign_key_violation). Mirar solo el
+ * 23503 —el que uno espera— deja pasar el caso de RESTRICT como un 500.
+ */
+export const PG_RESTRICT_VIOLATION = "23001";
+export const PG_FOREIGN_KEY_VIOLATION = "23503";
+
+/** True si el error de la base es un borrado bloqueado por una FK. */
+export function esBorradoBloqueadoPorFk(error) {
+  const codigo = error?.cause?.code ?? error?.code;
+
+  return (
+    codigo === PG_RESTRICT_VIOLATION || codigo === PG_FOREIGN_KEY_VIOLATION
+  );
+}
+
 /** Codigo de Postgres para texto que no parsea al tipo de la columna. */
 export const PG_INVALID_TEXT_REPRESENTATION = "22P02";
 

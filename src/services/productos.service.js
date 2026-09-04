@@ -284,6 +284,16 @@ export async function listarProductos(comercioId) {
     .orderBy(asc(producto.nombre));
 }
 
+/**
+ * Trae el producto junto con su stock discriminado por ubicación y el total
+ * (HU-11).
+ *
+ * El `LEFT JOIN` sale de `ubicacion`, no de `stock`: así las ubicaciones que
+ * todavía no tienen ningún movimiento sobre este producto figuran igual, con
+ * cantidad 0, en vez de faltar en la lista. El total se reduce en JS sobre
+ * esta misma respuesta — no se repite la invariante `STOCK = SUM(MOVIMIENTO)`
+ * en una segunda expresión SQL aparte.
+ */
 export async function obtenerProducto(comercioId, idCrudo) {
   if (!esUuid(idCrudo)) {
     throw new ErrorDeNegocio("El producto no existe", 404);
@@ -305,7 +315,31 @@ export async function obtenerProducto(comercioId, idCrudo) {
     throw new ErrorDeNegocio("El producto no existe", 404);
   }
 
-  return fila;
+  const filasStock = await db
+    .select({
+      ubicacionId: ubicacion.id,
+      ubicacionNombre: ubicacion.nombre,
+      cantidad: stock.cantidad,
+    })
+    .from(ubicacion)
+    .leftJoin(
+      stock,
+      and(
+        eq(stock.ubicacionId, ubicacion.id),
+        eq(stock.productoId, idCrudo),
+        eq(stock.comercioId, comercioId),
+      ),
+    )
+    .where(eq(ubicacion.comercioId, comercioId))
+    .orderBy(asc(ubicacion.nombre));
+
+  const porUbicacion = filasStock.map((f) => ({
+    ...f,
+    cantidad: f.cantidad ?? 0,
+  }));
+  const total = porUbicacion.reduce((acc, f) => acc + f.cantidad, 0);
+
+  return { ...fila, stock: { porUbicacion, total } };
 }
 
 /**

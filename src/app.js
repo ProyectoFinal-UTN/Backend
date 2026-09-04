@@ -63,6 +63,50 @@ app.use(cors({ origin: origenesPermitidos, credentials: true }));
  *           El correo ya esta registrado
  *           (`USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`).
  *
+ * /api/auth/sign-in/email:
+ *   post:
+ *     summary: Inicio de sesion (HU-2)
+ *     description: >
+ *       Valida las credenciales y devuelve una cookie de sesion HttpOnly.
+ *
+ *
+ *       La sesion caduca por inactividad: vive 8 horas desde la ultima
+ *       actividad y se renueva como mucho una vez por hora mientras se sigue
+ *       usando la app.
+ *
+ *
+ *       Un correo inexistente y una contrasena incorrecta devuelven la misma
+ *       respuesta, para que no se pueda averiguar que correos estan
+ *       registrados probando de a uno.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Sesion iniciada. Devuelve el usuario y setea la cookie.
+ *       401:
+ *         description: Credenciales invalidas.
+ *
+ * /api/auth/sign-out:
+ *   post:
+ *     summary: Cierre de sesion (HU-2)
+ *     description: Invalida la sesion actual y borra la cookie.
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Sesion cerrada.
+ *
  * /api/auth/{ruta}:
  *   post:
  *     summary: Resto de los endpoints de autenticacion (Better Auth)

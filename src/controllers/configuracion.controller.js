@@ -12,7 +12,7 @@ import {
 
 export async function ver(req, res, next) {
   try {
-    res.json(await obtenerConfiguracion(req.comercioId));
+    res.json(await obtenerConfiguracion(req.comercioId, req.rol));
   } catch (error) {
     next(error);
   }

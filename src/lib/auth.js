@@ -6,6 +6,7 @@ import { organization } from "better-auth/plugins/organization";
 import { db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { crearComercioParaPropietario } from "../services/comercios.service.js";
+import { aceptarInvitacion } from "../services/miembros.service.js";
 import { ac, roles, ROLES } from "./permissions.js";
 
 const PORT = process.env.PORT || 4000;
@@ -99,9 +100,13 @@ export const auth = betterAuth({
       create: {
         // Un usuario recién registrado todavía no es propietario de nada:
         // sin organization no hay tenant, sin member no hay rol, y sin
-        // comercio `requireAuth` lo rechaza con 403. Las tres se crean acá,
-        // en una transacción, apenas nace el usuario (HU-1).
-        after: async (user) => {
+        // comercio `requireAuth` lo rechaza con 403.
+        //
+        // Hay dos caminos. El normal (HU-1) le crea su propio comercio. Pero
+        // si se está registrando desde un link de invitación (HU-4), en vez de
+        // eso se lo suma al comercio que lo invitó: un empleado de kiosco no
+        // quiere su propio kiosco, y crearle uno dejaría datos basura.
+        after: async (user, contexto) => {
           // Este hook corre DESPUES de que la transaccion del alta commitea
           // (Better Auth lo encola con queueAfterTransactionHook), asi que un
           // throw aca ya no revierte al usuario: quedaria existiendo sin
@@ -110,6 +115,23 @@ export const auth = betterAuth({
           // Por eso el error se loguea entero en vez de propagarse, y la
           // reparacion la hace `obtenerContextoDeComercio` en el proximo
           // pedido con sesion.
+          const invitacionId = contexto?.body?.invitacionId;
+
+          if (invitacionId) {
+            try {
+              await aceptarInvitacion({ invitacionId, userId: user.id });
+              return;
+            } catch (error) {
+              // Invitación vencida, ya usada o inexistente. No se lo deja
+              // colgado: sigue por el camino normal y se queda con su propio
+              // comercio, que es mejor que una cuenta inservible.
+              console.warn(
+                `[auth] no se pudo usar la invitación ${invitacionId} de ${user.email}; se le crea comercio propio`,
+                error.message,
+              );
+            }
+          }
+
           try {
             await crearComercioParaPropietario({
               userId: user.id,

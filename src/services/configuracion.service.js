@@ -14,7 +14,14 @@ import { listarUbicaciones } from "./ubicaciones.service.js";
 /** Codigos ISO 4217 que el sistema acepta hoy. */
 export const MONEDAS_VALIDAS = ["ARS", "USD", "EUR", "BRL", "CLP", "UYU"];
 
-export async function obtenerConfiguracion(comercioId) {
+/**
+ * Devuelve los parametros generales del negocio.
+ *
+ * Incluye el `rol` de quien pregunta para que la pantalla pueda esconder los
+ * controles que ese rol no puede usar (HU-4). Es solo presentacion: quien
+ * igual intente la operacion se la rechaza `requirePermission` en el endpoint.
+ */
+export async function obtenerConfiguracion(comercioId, rol) {
   const [datos] = await db
     .select({ nombre: comercio.nombre, moneda: comercio.moneda })
     .from(comercio)
@@ -25,7 +32,7 @@ export async function obtenerConfiguracion(comercioId) {
     throw new ErrorDeNegocio("El comercio no existe", 404);
   }
 
-  return { ...datos, ubicaciones: await listarUbicaciones(comercioId) };
+  return { ...datos, rol, ubicaciones: await listarUbicaciones(comercioId) };
 }
 
 export async function actualizarMoneda(comercioId, monedaCruda) {

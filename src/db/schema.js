@@ -495,3 +495,55 @@ export const movimientoRelations = relations(movimiento, ({ one }) => ({
     references: [user.id],
   }),
 }));
+
+/**
+ * Registro de accesos y acciones (HU-5).
+ *
+ * Es un libro append-only: nunca se edita ni se borra una fila. Solo lo lee el
+ * propietario, y ese permiso vive en `src/lib/permissions.js`.
+ *
+ * `usuarioId` es `set null` y ademas se guarda el correo como copia: si algun
+ * dia se borra un usuario, el rastro de lo que hizo tiene que sobrevivir. Un
+ * registro de auditoria que se vacia cuando se va la persona no sirve de nada.
+ */
+export const auditoria = pgTable(
+  "auditoria",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    comercioId: uuid("comercio_id")
+      .notNull()
+      .references(() => comercio.id, { onDelete: "cascade" }),
+    usuarioId: text("usuario_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    // Copia del correo al momento del hecho, para que la fila se entienda sola.
+    usuarioCorreo: varchar("usuario_correo", { length: 255 }),
+    // inicio_sesion | crear | editar | eliminar
+    accion: varchar("accion", { length: 30 }).notNull(),
+    // sesion | producto | ubicacion | movimiento | comercio | miembro | ...
+    recurso: varchar("recurso", { length: 40 }).notNull(),
+    recursoId: varchar("recurso_id", { length: 100 }),
+    detalle: varchar("detalle", { length: 255 }),
+    ip: varchar("ip", { length: 45 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    // La pantalla siempre pide "lo ultimo de este comercio", asi que el indice
+    // va por comercio y fecha descendente.
+    index("auditoria_comercioId_createdAt_idx").on(
+      table.comercioId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export const auditoriaRelations = relations(auditoria, ({ one }) => ({
+  comercio: one(comercio, {
+    fields: [auditoria.comercioId],
+    references: [comercio.id],
+  }),
+  usuario: one(user, {
+    fields: [auditoria.usuarioId],
+    references: [user.id],
+  }),
+}));

@@ -5,7 +5,9 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins/organization";
 import { db } from "../db/client.js";
 import * as schema from "../db/schema.js";
+import { eq } from "drizzle-orm";
 import { crearComercioParaPropietario } from "../services/comercios.service.js";
+import { registrarAcceso } from "../services/auditoria.service.js";
 import { ac, roles, ROLES } from "./permissions.js";
 
 const PORT = process.env.PORT || 4000;
@@ -120,6 +122,35 @@ export const auth = betterAuth({
               `[auth] no se pudo crear el comercio de ${user.email}; se repara en el proximo pedido`,
               error,
             );
+          }
+        },
+      },
+    },
+
+    session: {
+      create: {
+        // Cada sesión nueva es un acceso: es la mitad "accesos" de HU-5. El
+        // middleware de auditoría no lo ve, porque el login lo resuelve Better
+        // Auth por dentro y nunca pasa por `requireAuth`.
+        //
+        // Se dispara también al registrarse, porque el alta deja la sesión
+        // iniciada. Eso es correcto: también es un acceso.
+        after: async (sesion) => {
+          try {
+            const [datos] = await db
+              .select({ correo: schema.user.email })
+              .from(schema.user)
+              .where(eq(schema.user.id, sesion.userId))
+              .limit(1);
+
+            await registrarAcceso({
+              userId: sesion.userId,
+              correo: datos?.correo,
+              ip: sesion.ipAddress,
+            });
+          } catch (error) {
+            // Que falle la auditoría no puede impedirle entrar a nadie.
+            console.error("[auth] no se pudo auditar el acceso", error.message);
           }
         },
       },

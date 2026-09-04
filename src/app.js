@@ -5,6 +5,7 @@ import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./lib/auth.js";
+import comerciosRoutes from "./routes/comercios.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
 import movimientosRoutes from "./routes/movimientos.routes.js";
 import productosRoutes from "./routes/productos.routes.js";
@@ -166,6 +167,7 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
+app.use("/api/comercio", comerciosRoutes);
 app.use("/api/ubicaciones", ubicacionesRoutes);
 app.use("/api/configuracion", configuracionRoutes);
 app.use("/api/productos", productosRoutes);

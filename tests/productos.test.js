@@ -83,11 +83,17 @@ afterAll(async () => {
 
   const ids = creadas.map((fila) => fila.organizationId);
 
+  // El comercio va primero, antes que el usuario: `movimiento.usuario_id` es
+  // `onDelete: restrict` (HU-13), asi que borrar un usuario que registro
+  // movimientos falla mientras esas filas existan. Borrar el comercio se las
+  // lleva por cascada junto con `producto`, `ubicacion` y `stock`.
+  if (ids.length > 0) {
+    await db.delete(comercio).where(inArray(comercio.organizationId, ids));
+  }
+
   await db.delete(user).where(like(user.email, patron));
 
   if (ids.length > 0) {
-    // `producto`, `ubicacion` y `stock` caen por cascada al borrar su comercio.
-    await db.delete(comercio).where(inArray(comercio.organizationId, ids));
     await db.delete(organization).where(inArray(organization.id, ids));
   }
 
@@ -319,6 +325,112 @@ describe("Listado y obtención", () => {
     expect(respuesta.status).toBe(200);
     expect(Array.isArray(respuesta.body)).toBe(true);
     expect(respuesta.body.length).toBeGreaterThan(0);
+  });
+});
+
+describe("Stock por ubicación en el detalle (HU-11)", () => {
+  test("el stock inicial del alta queda discriminado en su ubicación, con el total correcto", async () => {
+    const ubicacion = await crearUbicacionDePrueba(
+      propietarioA.cookie,
+      `Stock GET ${Date.now()}`,
+    );
+
+    const creado = await request(app)
+      .post("/api/productos")
+      .set("Cookie", propietarioA.cookie)
+      .send(productoValido({ stockActual: 15, ubicacionId: ubicacion.id }));
+
+    const respuesta = await request(app)
+      .get(`/api/productos/${creado.body.id}`)
+      .set("Cookie", propietarioA.cookie);
+
+    expect(respuesta.status).toBe(200);
+    const fila = respuesta.body.stock.porUbicacion.find(
+      (f) => f.ubicacionId === ubicacion.id,
+    );
+    expect(fila.cantidad).toBe(15);
+    expect(respuesta.body.stock.total).toBe(15);
+  });
+
+  test("una ubicación del comercio sin movimientos sobre el producto figura con cantidad 0", async () => {
+    const conStock = await crearUbicacionDePrueba(
+      propietarioA.cookie,
+      `Con stock ${Date.now()}`,
+    );
+    const sinStock = await crearUbicacionDePrueba(
+      propietarioA.cookie,
+      `Sin stock ${Date.now()}`,
+    );
+
+    const creado = await request(app)
+      .post("/api/productos")
+      .set("Cookie", propietarioA.cookie)
+      .send(productoValido({ stockActual: 8, ubicacionId: conStock.id }));
+
+    const respuesta = await request(app)
+      .get(`/api/productos/${creado.body.id}`)
+      .set("Cookie", propietarioA.cookie);
+
+    const filaSinStock = respuesta.body.stock.porUbicacion.find(
+      (f) => f.ubicacionId === sinStock.id,
+    );
+    expect(filaSinStock.cantidad).toBe(0);
+    expect(respuesta.body.stock.total).toBe(8);
+  });
+
+  test("un movimiento registrado por HU-13 se refleja al leer el producto por HU-11", async () => {
+    const ubicacion = await crearUbicacionDePrueba(
+      propietarioA.cookie,
+      `Ajuste GET ${Date.now()}`,
+    );
+
+    const creado = await request(app)
+      .post("/api/productos")
+      .set("Cookie", propietarioA.cookie)
+      .send(productoValido({ stockActual: 0, ubicacionId: ubicacion.id }));
+
+    const ajuste = await request(app)
+      .post("/api/movimientos")
+      .set("Cookie", propietarioA.cookie)
+      .send({
+        productoId: creado.body.id,
+        tipo: "ajuste",
+        cantidad: 6,
+        sentido: "entrada",
+        ubicacionId: ubicacion.id,
+      });
+    expect(ajuste.status).toBe(201);
+
+    const respuesta = await request(app)
+      .get(`/api/productos/${creado.body.id}`)
+      .set("Cookie", propietarioA.cookie);
+
+    const fila = respuesta.body.stock.porUbicacion.find(
+      (f) => f.ubicacionId === ubicacion.id,
+    );
+    expect(fila.cantidad).toBe(6);
+    expect(respuesta.body.stock.total).toBe(6);
+  });
+
+  test("el stock de un producto no mezcla ubicaciones de otro comercio", async () => {
+    const ubicacionAjena = await crearUbicacionDePrueba(
+      propietarioB.cookie,
+      `Ajena ${Date.now()}`,
+    );
+
+    const creadoA = await request(app)
+      .post("/api/productos")
+      .set("Cookie", propietarioA.cookie)
+      .send(productoValido({ stockActual: 3 }));
+
+    const respuesta = await request(app)
+      .get(`/api/productos/${creadoA.body.id}`)
+      .set("Cookie", propietarioA.cookie);
+
+    const idsUbicaciones = respuesta.body.stock.porUbicacion.map(
+      (f) => f.ubicacionId,
+    );
+    expect(idsUbicaciones).not.toContain(ubicacionAjena.id);
   });
 });
 

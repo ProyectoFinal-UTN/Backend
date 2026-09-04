@@ -5,9 +5,11 @@ import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./lib/auth.js";
+import comerciosRoutes from "./routes/comercios.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
 import invitacionesRoutes from "./routes/invitaciones.routes.js";
 import miembrosRoutes from "./routes/miembros.routes.js";
+import movimientosRoutes from "./routes/movimientos.routes.js";
 import productosRoutes from "./routes/productos.routes.js";
 import ubicacionesRoutes from "./routes/ubicaciones.routes.js";
 
@@ -63,6 +65,50 @@ app.use(cors({ origin: origenesPermitidos, credentials: true }));
  *         description: >
  *           El correo ya esta registrado
  *           (`USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`).
+ *
+ * /api/auth/sign-in/email:
+ *   post:
+ *     summary: Inicio de sesion (HU-2)
+ *     description: >
+ *       Valida las credenciales y devuelve una cookie de sesion HttpOnly.
+ *
+ *
+ *       La sesion caduca por inactividad: vive 8 horas desde la ultima
+ *       actividad y se renueva como mucho una vez por hora mientras se sigue
+ *       usando la app.
+ *
+ *
+ *       Un correo inexistente y una contrasena incorrecta devuelven la misma
+ *       respuesta, para que no se pueda averiguar que correos estan
+ *       registrados probando de a uno.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Sesion iniciada. Devuelve el usuario y setea la cookie.
+ *       401:
+ *         description: Credenciales invalidas.
+ *
+ * /api/auth/sign-out:
+ *   post:
+ *     summary: Cierre de sesion (HU-2)
+ *     description: Invalida la sesion actual y borra la cookie.
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Sesion cerrada.
  *
  * /api/auth/{ruta}:
  *   post:
@@ -125,9 +171,11 @@ app.get("/health", (req, res) => {
 
 app.use("/api/miembros", miembrosRoutes);
 app.use("/api/invitaciones", invitacionesRoutes);
+app.use("/api/comercio", comerciosRoutes);
 app.use("/api/ubicaciones", ubicacionesRoutes);
 app.use("/api/configuracion", configuracionRoutes);
 app.use("/api/productos", productosRoutes);
+app.use("/api/movimientos", movimientosRoutes);
 
 // Manejador de errores: cierra la cadena para que un throw en un service no
 // deje la request colgada. Va siempre ultimo.

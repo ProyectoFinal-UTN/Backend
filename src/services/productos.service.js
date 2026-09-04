@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { producto, stock, ubicacion } from "../db/schema.js";
 import { ErrorDeNegocio, PG_UNIQUE_VIOLATION, esUuid } from "../lib/errores.js";
+import { aplicarMovimiento } from "./movimientos.service.js";
 import { buscarEnOpenFoodFacts } from "./productosExternos.service.js";
 
 /**
@@ -283,6 +284,16 @@ export async function listarProductos(comercioId) {
     .orderBy(asc(producto.nombre));
 }
 
+/**
+ * Trae el producto junto con su stock discriminado por ubicación y el total
+ * (HU-11).
+ *
+ * El `LEFT JOIN` sale de `ubicacion`, no de `stock`: así las ubicaciones que
+ * todavía no tienen ningún movimiento sobre este producto figuran igual, con
+ * cantidad 0, en vez de faltar en la lista. El total se reduce en JS sobre
+ * esta misma respuesta — no se repite la invariante `STOCK = SUM(MOVIMIENTO)`
+ * en una segunda expresión SQL aparte.
+ */
 export async function obtenerProducto(comercioId, idCrudo) {
   if (!esUuid(idCrudo)) {
     throw new ErrorDeNegocio("El producto no existe", 404);
@@ -304,10 +315,44 @@ export async function obtenerProducto(comercioId, idCrudo) {
     throw new ErrorDeNegocio("El producto no existe", 404);
   }
 
-  return fila;
+  const filasStock = await db
+    .select({
+      ubicacionId: ubicacion.id,
+      ubicacionNombre: ubicacion.nombre,
+      cantidad: stock.cantidad,
+    })
+    .from(ubicacion)
+    .leftJoin(
+      stock,
+      and(
+        eq(stock.ubicacionId, ubicacion.id),
+        eq(stock.productoId, idCrudo),
+        eq(stock.comercioId, comercioId),
+      ),
+    )
+    .where(eq(ubicacion.comercioId, comercioId))
+    .orderBy(asc(ubicacion.nombre));
+
+  const porUbicacion = filasStock.map((f) => ({
+    ...f,
+    cantidad: f.cantidad ?? 0,
+  }));
+  const total = porUbicacion.reduce((acc, f) => acc + f.cantidad, 0);
+
+  return { ...fila, stock: { porUbicacion, total } };
 }
 
-export async function crearProducto(comercioId, datosCrudos = {}) {
+/**
+ * Da de alta un producto con su stock inicial.
+ *
+ * El stock inicial se carga a traves de `aplicarMovimiento` (HU-13) y no con un
+ * insert directo, para que quede su `MOVIMIENTO` de respaldo: STOCK es una
+ * cache del libro, y una fila de stock sin movimiento que la explique rompe el
+ * invariante `STOCK.cantidad = SUM(MOVIMIENTO.cantidad)`. Se registra como
+ * `ajuste`, que es el tipo que significa "la cantidad pasa a ser esta porque
+ * asi se declara".
+ */
+export async function crearProducto(comercioId, usuarioId, datosCrudos = {}) {
   const datos = validarDatosProducto(datosCrudos);
 
   try {
@@ -330,13 +375,29 @@ export async function crearProducto(comercioId, datosCrudos = {}) {
         datosCrudos.ubicacionId,
       );
 
+      if (datos.stockActual > 0) {
+        const { stock: nuevoStock } = await aplicarMovimiento(tx, {
+          comercioId,
+          productoId: nuevoProducto.id,
+          ubicacionId,
+          usuarioId,
+          tipo: "ajuste",
+          cantidad: datos.stockActual,
+        });
+
+        return { ...nuevoProducto, stock: nuevoStock };
+      }
+
+      // Con stock inicial 0 no se registra movimiento: una fila de cantidad 0
+      // seria ruido en el historial. La fila de `stock` se crea igual para que
+      // el producto figure con 0 en esa ubicacion (HU-11).
       const [nuevoStock] = await tx
         .insert(stock)
         .values({
           comercioId,
           productoId: nuevoProducto.id,
           ubicacionId,
-          cantidad: datos.stockActual,
+          cantidad: 0,
         })
         .returning({
           id: stock.id,

@@ -179,6 +179,30 @@ Jest corre sobre ESM con `NODE_OPTIONS=--experimental-vm-modules`, ya incluido e
 - `.env` real: nunca se sube al repo, nunca se comparte por WhatsApp/Discord grupal.
 - Para compartir el `DATABASE_URL` u otras claves entre el equipo, usar el gestor de contraseñas acordado o un canal privado 1 a 1.
 - `.env.example` sí se commitea, y solo tiene nombres de variables con placeholders — nunca valores reales.
+- El `.dockerignore` excluye `.env` y `.git`. Sin él, el `COPY . .` del Dockerfile mete el `.env` real dentro de la imagen: cualquiera que tenga la imagen tiene las credenciales, aunque nunca vea el repositorio.
+- `BETTER_AUTH_SECRET` es obligatoria y de al menos 32 caracteres; el arranque falla si no está. No es paranoia: cuando falta, Better Auth **no** deja el secreto vacío sino que cae en uno hardcodeado que está publicado en su código fuente, y solo se niega a arrancar si `NODE_ENV === "production"` — que en nuestra imagen no está definido. Sin ese chequeo el backend levantaría sin errores y con las sesiones firmadas por un secreto que cualquiera puede leer en GitHub.
+
+## Protección de credenciales y datos personales (HU-31)
+
+**Contraseñas.** Se guardan con hash bcrypt de 12 rondas (RNF4), nunca en texto plano y nunca reversible. Better Auth usa scrypt por defecto: el hasher propio está enchufado en `src/lib/auth.js`, y cambiarlo más adelante invalidaría todas las contraseñas ya guardadas. El máximo es de 72 caracteres porque bcrypt ignora todo lo que pase de 72 bytes — sin ese tope, dos contraseñas largas que compartan el prefijo serían intercambiables y quien usara una frase larga tendría menos seguridad de la que cree. Ningún endpoint devuelve el hash.
+
+**Tráfico.** `helmet` va montado antes que todo lo demás en `src/app.js`, para que las cabeceras apliquen también a las respuestas de error. Aporta HSTS (el navegador entra a este dominio solo por HTTPS) y `X-Content-Type-Options: nosniff`, y oculta el `X-Powered-By` que anunciaba "Express". La conexión a Neon exige TLS por `sslmode=require` en el `DATABASE_URL`; sin eso las credenciales y los datos viajarían en claro hasta la base.
+
+**Datos personales — Ley 25.326.** La ley reconoce dos derechos y los dos tienen endpoint:
+
+| Derecho | Endpoint | Qué hace |
+|---|---|---|
+| Acceso (art. 14) | `GET /api/mis-datos` | Devuelve como descarga todo lo que el sistema guarda de la persona: cuenta, comercios en los que participa, sesiones activas y actividad registrada. No incluye la contraseña, ni siquiera hasheada. |
+| Supresión (art. 16) | `DELETE /api/mi-cuenta` | Da de baja la cuenta. |
+
+**Por qué la baja anonimiza en vez de borrar la fila.** `movimiento.usuario_id` es `NOT NULL` con `ON DELETE RESTRICT`, porque el libro de movimientos es append-only y tiene que saber quién registró cada uno: un `DELETE` fallaría para cualquier usuario que haya movido stock, o sea para casi todos. La anonimización resuelve la tensión — se eliminan los datos que identifican a la persona (nombre, correo, imagen) y la fila queda para que el libro conserve su integridad. Un registro que ya no identifica a nadie deja de ser un dato personal, que es lo que la ley protege. Lo que sí se borra de verdad es el hash de la contraseña, los tokens y las sesiones: después de la baja no se puede volver a entrar.
+
+La baja se rechaza con 409 si quien la pide es el único propietario de algún comercio, porque ese comercio quedaría sin nadie que pueda administrarlo y sin forma de recuperarlo desde la app. El mensaje dice qué hacer antes de reintentar.
+
+Dos detalles de orden en `src/app.js` que son fáciles de romper sin darse cuenta, y están comentados ahí mismo:
+
+- Las rutas de datos personales van **arriba** de `auditarCambios`. Si pasaran por el middleware, al terminar la respuesta de la baja se escribiría un evento de auditoría nuevo con el correo real de la persona, volviendo a meter el dato que se acaba de borrar.
+- `requireAuth` en esas rutas va **ruta por ruta**, no con un `router.use`. El router se monta en `/api` a secas, así que un `router.use` correría en cualquier pedido a `/api/*` aunque no matcheara ninguna ruta suya, y como responde 401 en vez de seguir la cadena dejaría sin acceso a los endpoints públicos de los demás módulos.
 
 ## Flujo de trabajo con Git
 

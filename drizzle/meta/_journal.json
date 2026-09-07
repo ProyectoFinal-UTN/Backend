@@ -57,6 +57,13 @@
       "when": 1788292063508,
       "tag": "0007_backfill_movimiento_alta_inicial",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788562547047,
+      "tag": "0008_furry_frightful_four",
+      "breakpoints": true
     }
   ]
 }

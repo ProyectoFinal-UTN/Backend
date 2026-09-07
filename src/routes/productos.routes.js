@@ -4,6 +4,7 @@ import {
   requireAuth,
   requirePermission,
 } from "../middlewares/auth.middleware.js";
+import { recibirCsv } from "../middlewares/subidaCsv.middleware.js";
 
 const router = Router();
 
@@ -144,6 +145,128 @@ router.post(
   "/",
   requirePermission({ producto: ["create"] }),
   controller.crear,
+);
+
+/**
+ * @openapi
+ * /api/productos/importar:
+ *   post:
+ *     summary: Importa un catálogo inicial desde un archivo CSV (HU-7)
+ *     description: >
+ *       Recibe un CSV y lo procesa **fila por fila**. Cada fila válida se da de
+ *       alta con la misma lógica que `POST /api/productos` (crea el producto y
+ *       su fila de `stock` inicial, resolviendo la ubicación por defecto si el
+ *       comercio no tiene ninguna).
+ *
+ *
+ *       Las filas con error **no abortan la carga**: se informan en `errores`
+ *       con el motivo, y las válidas se importan igual. Un código de barras
+ *       repetido —contra un producto activo del comercio o contra otra fila del
+ *       mismo archivo— es una de esas filas con error.
+ *
+ *
+ *       Por eso la respuesta es **200 aunque haya filas rechazadas**: el
+ *       archivo se procesó y el resultado parcial es el esperado. Los 400 son
+ *       solo para lo que invalida el archivo entero.
+ *
+ *
+ *       Si en el medio ocurre un problema del sistema (se corta la conexión a
+ *       la base, por ejemplo), la importación **se corta pero igual devuelve
+ *       200** con `interrumpido: true` y la fila donde paró. Es a propósito:
+ *       cada fila se importa en su propia transacción, así que las anteriores
+ *       ya están guardadas, y un error genérico se las ocultaría al usuario.
+ *       La recuperación es **volver a subir el mismo archivo**: los productos
+ *       ya cargados se reportan como código de barras duplicado y el resto se
+ *       importa. Si el corte pasa antes de importar nada, sí devuelve 500.
+ *
+ *
+ *       Columnas (encabezados en la primera línea; se aceptan variantes en
+ *       mayúsculas, con acentos, en camelCase o con `;` como separador):
+ *       `nombre`, `codigo_barras`, `categoria` y `unidad_medida` son
+ *       obligatorias; `umbral_minimo` y `stock_actual` valen 0 si están vacías;
+ *       `ubicacion` es el **nombre** de una ubicación del comercio y, si se
+ *       omite, aplica la ubicación por defecto. Las columnas que no se
+ *       reconocen (precio, proveedor) se ignoran. Máximo 1000 filas y 2 MB.
+ *     tags: [Productos]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [archivo]
+ *             properties:
+ *               archivo:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo .csv del catálogo
+ *     responses:
+ *       200:
+ *         description: >
+ *           El archivo se procesó. Puede incluir filas importadas y filas con
+ *           error a la vez.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalFilas: { type: integer, example: 3, description: Filas de datos que tenía el archivo }
+ *                 procesadas:
+ *                   type: integer
+ *                   example: 3
+ *                   description: >
+ *                     Filas que se llegaron a intentar. Siempre vale
+ *                     `importados + fallidos`. Es igual a `totalFilas` salvo
+ *                     que la importación se haya interrumpido.
+ *                 importados: { type: integer, example: 2 }
+ *                 fallidos: { type: integer, example: 1 }
+ *                 interrumpido:
+ *                   type: boolean
+ *                   example: false
+ *                   description: >
+ *                     `true` si un problema del sistema cortó la importación
+ *                     antes de terminar el archivo. Siempre viene presente.
+ *                 interrupcion:
+ *                   nullable: true
+ *                   description: "`null` salvo que `interrumpido` sea true."
+ *                   type: object
+ *                   properties:
+ *                     fila: { type: integer, example: 202 }
+ *                     motivo:
+ *                       type: string
+ *                       description: Texto listo para mostrarle al usuario, con la instrucción de volver a subir el archivo.
+ *                 productos:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       fila: { type: integer, example: 2, description: Línea del archivo }
+ *                       id: { type: string, format: uuid }
+ *                       nombre: { type: string, example: Coca-Cola 500ml }
+ *                       codigoBarras: { type: string, example: "7790895000782" }
+ *                 errores:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       fila: { type: integer, example: 4 }
+ *                       codigoBarras: { type: string, example: "7790895000782" }
+ *                       motivo:
+ *                         type: string
+ *                         example: Ya existe un producto con el código de barras "7790895000782"
+ *       400:
+ *         description: >
+ *           Problema del archivo completo: no se envió, está vacío, no parsea
+ *           como CSV, le faltan columnas obligatorias, o supera el límite de
+ *           filas o de tamaño.
+ *       403:
+ *         description: El rol no puede crear productos
+ */
+router.post(
+  "/importar",
+  requirePermission({ producto: ["create"] }),
+  recibirCsv,
+  controller.importar,
 );
 
 /**

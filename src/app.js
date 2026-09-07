@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 import { toNodeHandler } from "better-auth/node";
@@ -9,6 +10,7 @@ import { auditarCambios } from "./middlewares/auditoria.middleware.js";
 import comerciosRoutes from "./routes/comercios.routes.js";
 import auditoriaRoutes from "./routes/auditoria.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
+import datosPersonalesRoutes from "./routes/datosPersonales.routes.js";
 import movimientosRoutes from "./routes/movimientos.routes.js";
 import productosRoutes from "./routes/productos.routes.js";
 import ubicacionesRoutes from "./routes/ubicaciones.routes.js";
@@ -21,6 +23,30 @@ const origenesPermitidos = (
   .split(",")
   .map((origen) => origen.trim())
   .filter(Boolean);
+
+/**
+ * Cabeceras de seguridad (HU-31, RNF4).
+ *
+ * Va antes que todo lo demas para que aplique tambien a las respuestas de
+ * error. Lo mas importante que aporta:
+ *
+ * - HSTS: le dice al navegador que a este dominio solo se entra por HTTPS,
+ *   aunque el usuario escriba http://. Sin esto, el primer pedido de cada
+ *   visita puede viajar en claro.
+ * - `X-Content-Type-Options: nosniff`: evita que el navegador adivine el tipo
+ *   de un archivo e interprete como script algo que no lo es.
+ * - Se oculta `X-Powered-By`, que hoy anuncia "Express" a cualquiera.
+ *
+ * `contentSecurityPolicy` queda apagado porque esta API no sirve HTML: la CSP
+ * la define el Frontend, que es quien lo hace. Y `crossOriginResourcePolicy`
+ * se abre porque el Frontend vive en otro origen en produccion.
+ */
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
 
 // `credentials: true` es obligatorio: la sesion de Better Auth viaja en cookie,
 // y sin esto el navegador no la manda desde el Frontend.
@@ -168,6 +194,10 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
+
+// Van montadas en /api porque cada una define su propia ruta completa
+// (/mis-datos, /mi-cuenta): son de la persona, no de un recurso del comercio.
+app.use("/api", datosPersonalesRoutes);
 
 app.use("/api/comercio", comerciosRoutes);
 // Va antes de las rutas de negocio: engancha el final de cada respuesta para

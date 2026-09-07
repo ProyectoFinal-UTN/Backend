@@ -182,6 +182,34 @@ Jest corre sobre ESM con `NODE_OPTIONS=--experimental-vm-modules`, ya incluido e
 - El `.dockerignore` excluye `.env` y `.git`. Sin él, el `COPY . .` del Dockerfile mete el `.env` real dentro de la imagen: cualquiera que tenga la imagen tiene las credenciales, aunque nunca vea el repositorio.
 - `BETTER_AUTH_SECRET` es obligatoria y de al menos 32 caracteres; el arranque falla si no está. No es paranoia: cuando falta, Better Auth **no** deja el secreto vacío sino que cae en uno hardcodeado que está publicado en su código fuente, y solo se niega a arrancar si `NODE_ENV === "production"` — que en nuestra imagen no está definido. Sin ese chequeo el backend levantaría sin errores y con las sesiones firmadas por un secreto que cualquiera puede leer en GitHub.
 
+## Correos y recuperación de contraseña (HU-3)
+
+El proveedor es **Resend**, y todo el trato con él vive en `src/lib/correo.js`. Si mañana se cambia por otro, se toca ese archivo y nada más.
+
+**Se puede probar el flujo sin configurar nada.** Resend no deja mandarle a cualquier dirección hasta tener un dominio propio verificado: sin dominio, solo acepta la casilla con la que se registró la cuenta. Todavía no tenemos dominio, así que `enviarCorreo` tiene un camino de respaldo — cuando el envío no es posible (no hay `RESEND_API_KEY`, o Resend rechaza la dirección), el correo **no se pierde**: se escribe entero en la consola del backend, con el link adentro.
+
+```
+──────────────────────────────────────────────────────────────────────
+[correo] NO se envió (falta RESEND_API_KEY en el .env). Va el contenido para poder seguir:
+  Para:   ana@kiosco.com
+  Asunto: Recuperá tu contraseña
+
+Entrá acá para elegir una nueva:
+http://localhost:5173/restablecer?token=3yNskayFL7oEJGQD8XYAwCR4
+──────────────────────────────────────────────────────────────────────
+```
+
+Copiás ese link al navegador y seguís desde ahí. El día que haya dominio verificado se saca `registrarEnConsola` y no hace falta tocar nada más.
+
+`enviarCorreo` **nunca tira**. Que falle un correo no puede romper la operación que lo disparó, y en la recuperación es además un problema de seguridad: si el error se propagara, quien pidió la recuperación vería un fallo solo cuando el correo existe, y eso alcanza para averiguar quiénes están registrados. Devuelve si pudo o no, y quien llama decide.
+
+**El flujo.** Better Auth maneja el ciclo del token (generarlo, guardarlo, validarlo, vencerlo) y expone `POST /api/auth/request-password-reset` y `POST /api/auth/reset-password`. Lo nuestro es el correo: a dónde apunta el link y qué dice (`src/services/recuperacion.service.js`).
+
+- El link va **al Frontend** (`/restablecer?token=...`), no al backend. Better Auth ofrece una `url` propia que pasa por el backend para redirigir después; ese salto no aporta nada, porque la pantalla que pide la contraseña nueva vive en el Frontend. Para eso entrega el `token` por separado.
+- Vence en **una hora** y se usa **una sola vez**.
+- El pedido responde **200 siempre**, exista o no el correo. Si contestara distinto, alcanzaría con probar de a uno para averiguar quiénes tienen cuenta. Better Auth incluso simula la generación del token para que tampoco se filtre por el tiempo de respuesta.
+- Cambiar la contraseña **cierra todas las sesiones abiertas** de esa cuenta (`revokeSessionsOnPasswordReset`). Es la mitad que suele faltar: si alguien recupera la cuenta porque se la habían tomado, cambiar la clave no sirve de nada mientras la sesión del intruso siga viva.
+
 ## Protección de credenciales y datos personales (HU-31)
 
 **Contraseñas.** Se guardan con hash bcrypt de 12 rondas (RNF4), nunca en texto plano y nunca reversible. Better Auth usa scrypt por defecto: el hasher propio está enchufado en `src/lib/auth.js`, y cambiarlo más adelante invalidaría todas las contraseñas ya guardadas. El máximo es de 72 caracteres porque bcrypt ignora todo lo que pase de 72 bytes — sin ese tope, dos contraseñas largas que compartan el prefijo serían intercambiables y quien usara una frase larga tendría menos seguridad de la que cree. Ningún endpoint devuelve el hash.

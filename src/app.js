@@ -129,6 +129,72 @@ app.use(cors({ origin: origenesPermitidos, credentials: true }));
  *       401:
  *         description: Credenciales invalidas.
  *
+ * /api/auth/request-password-reset:
+ *   post:
+ *     summary: Pedir el correo de recuperacion de contrasena (HU-3)
+ *     description: >
+ *       Manda un correo con un link para elegir una contrasena nueva. El link
+ *       apunta al Frontend (`/restablecer?token=...`), vence en una hora y se
+ *       puede usar una sola vez.
+ *
+ *
+ *       **Responde 200 siempre**, exista o no el correo. Es a proposito: si
+ *       contestara distinto para uno registrado y para uno que no, alcanzaria
+ *       con probar de a uno para averiguar quienes tienen cuenta.
+ *
+ *
+ *       Mientras no haya un dominio verificado en Resend, el envio real solo
+ *       funciona hacia la casilla de la cuenta de Resend. En los demas casos el
+ *       correo no se pierde: sale entero por la consola del backend, con el
+ *       link adentro.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: Pedido recibido. No dice si el correo existe.
+ *
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Elegir la contrasena nueva con el token del correo (HU-3)
+ *     description: >
+ *       Cambia la contrasena y **cierra todas las sesiones abiertas** de esa
+ *       cuenta. Es la mitad que suele faltar: si alguien recupera la cuenta
+ *       porque se la habian tomado, cambiar la clave no sirve de nada mientras
+ *       la sesion del intruso siga viva.
+ *
+ *
+ *       El token se usa una sola vez y vence en una hora.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [newPassword, token]
+ *             properties:
+ *               newPassword:
+ *                 type: string
+ *                 minLength: 8
+ *                 maxLength: 72
+ *               token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Contrasena cambiada. Hay que volver a iniciar sesion.
+ *       400:
+ *         description: El token es invalido, ya se uso o vencio.
+ *
  * /api/auth/sign-out:
  *   post:
  *     summary: Cierre de sesion (HU-2)

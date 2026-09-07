@@ -11,6 +11,8 @@ import comerciosRoutes from "./routes/comercios.routes.js";
 import auditoriaRoutes from "./routes/auditoria.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
 import datosPersonalesRoutes from "./routes/datosPersonales.routes.js";
+import invitacionesRoutes from "./routes/invitaciones.routes.js";
+import miembrosRoutes from "./routes/miembros.routes.js";
 import movimientosRoutes from "./routes/movimientos.routes.js";
 import productosRoutes from "./routes/productos.routes.js";
 import ubicacionesRoutes from "./routes/ubicaciones.routes.js";
@@ -197,14 +199,29 @@ app.get("/health", (req, res) => {
 
 // Van montadas en /api porque cada una define su propia ruta completa
 // (/mis-datos, /mi-cuenta): son de la persona, no de un recurso del comercio.
+//
+// Quedan ARRIBA de `auditarCambios`, y eso es a proposito. `DELETE
+// /api/mi-cuenta` anonimiza la auditoria de esa persona; si ademas pasara por
+// el middleware, al terminar la respuesta se escribiria un evento nuevo con su
+// correo real y volveria a entrar el dato que se acaba de borrar. La baja
+// quedaria registrada dejando rastro de quien la pidio, que es exactamente lo
+// contrario de lo que pide el derecho de supresion (HU-31, Ley 25.326).
 app.use("/api", datosPersonalesRoutes);
 
-app.use("/api/comercio", comerciosRoutes);
-// Va antes de las rutas de negocio: engancha el final de cada respuesta para
-// dejar constancia de lo que cambio (HU-5). Cubre tambien los endpoints que
-// agreguen los demas, sin que tengan que acordarse de llamarlo.
+// Va antes de TODAS las rutas de negocio: engancha el final de cada respuesta
+// para dejar constancia de lo que cambio (HU-5). Cubre tambien los endpoints
+// que agreguen los demas, sin que tengan que acordarse de llamarlo.
+//
+// El orden importa y es facil de romper sin darse cuenta: lo que se monte
+// arriba de esta linea queda sin auditar. Al mergear HU-4, git dejo estas
+// rutas por encima sin marcar conflicto, y eso habria dejado justamente las
+// operaciones sobre personas —invitar, cambiar un rol, quitar a alguien— fuera
+// del registro. Cualquier ruta nueva va DEBAJO.
 app.use(auditarCambios);
 
+app.use("/api/miembros", miembrosRoutes);
+app.use("/api/invitaciones", invitacionesRoutes);
+app.use("/api/comercio", comerciosRoutes);
 app.use("/api/auditoria", auditoriaRoutes);
 app.use("/api/ubicaciones", ubicacionesRoutes);
 app.use("/api/configuracion", configuracionRoutes);

@@ -4,9 +4,20 @@ import { requireAuth } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-// Sin `requirePermission`: estos endpoints no dependen del rol. Cualquiera
-// tiene derecho sobre sus propios datos, incluido un empleado.
-router.use(requireAuth);
+/**
+ * `requireAuth` va ruta por ruta, no con un `router.use`.
+ *
+ * Este router se monta en `/api` a secas, porque sus rutas son `/mis-datos` y
+ * `/mi-cuenta`: son de la persona, no de un recurso del comercio. Con un
+ * `router.use(requireAuth)` ese middleware correria en CUALQUIER pedido a
+ * `/api/*`, aunque despues no matchee ninguna ruta de acá, y como responde 401
+ * en vez de seguir la cadena, se comeria los endpoints publicos de los demas.
+ * Ya paso: dejo en 401 el `GET /api/invitaciones/:id` de HU-4, que a proposito
+ * se puede ver sin sesion para decidir antes de crear la cuenta.
+ *
+ * Sin `requirePermission`: estos endpoints no dependen del rol. Cualquiera
+ * tiene derecho sobre sus propios datos, incluido un empleado.
+ */
 
 /**
  * @openapi
@@ -33,7 +44,7 @@ router.use(requireAuth);
  *       401:
  *         description: No hay sesión activa
  */
-router.get("/mis-datos", controller.misDatos);
+router.get("/mis-datos", requireAuth, controller.misDatos);
 
 /**
  * @openapi
@@ -68,6 +79,6 @@ router.get("/mis-datos", controller.misDatos);
  *       409:
  *         description: Es el único propietario de un comercio
  */
-router.delete("/mi-cuenta", controller.darDeBaja);
+router.delete("/mi-cuenta", requireAuth, controller.darDeBaja);
 
 export default router;

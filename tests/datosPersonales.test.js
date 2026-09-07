@@ -185,6 +185,15 @@ describe("Criterio 3: derecho de acceso", () => {
   test("sin sesión responde 401", async () => {
     expect((await request(app).get("/api/mis-datos")).status).toBe(401);
   });
+
+  test("no le exige sesión al resto de /api", async () => {
+    // Este router se monta en `/api` a secas. Si `requireAuth` se pusiera con
+    // un `router.use`, correría en cualquier pedido a `/api/*` aunque no
+    // matcheara ninguna ruta de acá, y como responde 401 en vez de seguir la
+    // cadena dejaría sin sesión posible a los endpoints públicos de los demás.
+    // Una ruta inexistente tiene que dar 404, no 401.
+    expect((await request(app).get("/api/ruta-que-no-existe")).status).toBe(404);
+  });
 });
 
 describe("Criterio 3: derecho de supresión", () => {

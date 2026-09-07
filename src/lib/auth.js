@@ -9,6 +9,10 @@ import { eq } from "drizzle-orm";
 import { crearComercioParaPropietario } from "../services/comercios.service.js";
 import { registrarAcceso } from "../services/auditoria.service.js";
 import { aceptarInvitacion } from "../services/miembros.service.js";
+import {
+  MINUTOS_DE_VIGENCIA,
+  enviarRecuperacion,
+} from "../services/recuperacion.service.js";
 import { ac, roles, ROLES } from "./permissions.js";
 
 const PORT = process.env.PORT || 4000;
@@ -95,6 +99,43 @@ export const auth = betterAuth({
       hash: (password) => bcrypt.hash(password, BCRYPT_ROUNDS),
       verify: ({ hash, password }) => bcrypt.compare(password, hash),
     },
+
+    /**
+     * Recuperación de contraseña (HU-3).
+     *
+     * Better Auth genera y valida el token; acá solo se manda el correo. Se usa
+     * el `token` y no la `url` que ofrece: esa pasa por el backend para
+     * redirigir después, y la pantalla que pide la contraseña nueva vive en el
+     * Frontend, así que el link va derecho ahí (ver `recuperacion.service.js`).
+     *
+     * El envío no puede tirar. Si propagara el error, quien pidió la
+     * recuperación vería un fallo solo cuando el correo existe y el envío
+     * falla, y eso alcanza para averiguar qué correos están registrados.
+     * `enviarCorreo` devuelve si pudo o no, y no lanza.
+     */
+    sendResetPassword: async ({ user, token }) => {
+      const { enviado, motivo } = await enviarRecuperacion({
+        correo: user.email,
+        token,
+      });
+
+      if (!enviado) {
+        console.warn(`[auth] recuperación no enviada por correo: ${motivo}`);
+      }
+    },
+
+    // Una hora. Suficiente para que alguien lo lea cuando puede, y corto para
+    // que un correo viejo reenviado no siga sirviendo como llave.
+    resetPasswordTokenExpiresIn: MINUTOS_DE_VIGENCIA * 60,
+
+    /**
+     * Cambiar la contraseña invalida todas las sesiones abiertas.
+     *
+     * Es la mitad que suele faltar: si alguien recupera la cuenta porque se la
+     * habían tomado, cambiar la contraseña no sirve de nada mientras la sesión
+     * del intruso siga viva. Se cierran todas y hay que volver a entrar.
+     */
+    revokeSessionsOnPasswordReset: true,
   },
 
   databaseHooks: {

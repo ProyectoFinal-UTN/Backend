@@ -9,6 +9,8 @@ import { auditarCambios } from "./middlewares/auditoria.middleware.js";
 import comerciosRoutes from "./routes/comercios.routes.js";
 import auditoriaRoutes from "./routes/auditoria.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
+import invitacionesRoutes from "./routes/invitaciones.routes.js";
+import miembrosRoutes from "./routes/miembros.routes.js";
 import movimientosRoutes from "./routes/movimientos.routes.js";
 import productosRoutes from "./routes/productos.routes.js";
 import ubicacionesRoutes from "./routes/ubicaciones.routes.js";
@@ -169,12 +171,20 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-app.use("/api/comercio", comerciosRoutes);
-// Va antes de las rutas de negocio: engancha el final de cada respuesta para
-// dejar constancia de lo que cambio (HU-5). Cubre tambien los endpoints que
-// agreguen los demas, sin que tengan que acordarse de llamarlo.
+// Va antes de TODAS las rutas de negocio: engancha el final de cada respuesta
+// para dejar constancia de lo que cambio (HU-5). Cubre tambien los endpoints
+// que agreguen los demas, sin que tengan que acordarse de llamarlo.
+//
+// El orden importa y es facil de romper sin darse cuenta: lo que se monte
+// arriba de esta linea queda sin auditar. Al mergear HU-4, git dejo estas
+// rutas por encima sin marcar conflicto, y eso habria dejado justamente las
+// operaciones sobre personas —invitar, cambiar un rol, quitar a alguien— fuera
+// del registro. Cualquier ruta nueva va DEBAJO.
 app.use(auditarCambios);
 
+app.use("/api/miembros", miembrosRoutes);
+app.use("/api/invitaciones", invitacionesRoutes);
+app.use("/api/comercio", comerciosRoutes);
 app.use("/api/auditoria", auditoriaRoutes);
 app.use("/api/ubicaciones", ubicacionesRoutes);
 app.use("/api/configuracion", configuracionRoutes);

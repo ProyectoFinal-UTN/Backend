@@ -1,4 +1,5 @@
 import * as productosService from "../services/productos.service.js";
+import * as importacionService from "../services/productosImportacion.service.js";
 
 /**
  * Controllers del catalogo de productos (HU-9).
@@ -34,6 +35,28 @@ export async function crear(req, res, next) {
       req.body,
     );
     res.status(201).json(creado);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Importacion masiva desde CSV (HU-7).
+ *
+ * Responde 200 aunque haya filas rechazadas: el archivo se proceso, y un
+ * resultado parcial (algunas importadas, otras informadas con su motivo) es el
+ * resultado esperado de la historia, no un error. Los 4xx quedan para lo que
+ * invalida el archivo entero, y los tira el service.
+ */
+export async function importar(req, res, next) {
+  try {
+    res.json(
+      await importacionService.importarProductos(
+        req.comercioId,
+        req.usuario.id,
+        req.file?.buffer,
+      ),
+    );
   } catch (error) {
     next(error);
   }

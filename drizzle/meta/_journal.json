@@ -5,8 +5,64 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1785603335880,
-      "tag": "0000_bouncy_corsair",
+      "when": 1787857424757,
+      "tag": "0000_exotic_tenebrous",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787859237083,
+      "tag": "0001_quiet_scalphunter",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788188425737,
+      "tag": "0002_fantastic_dark_phoenix",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788272649521,
+      "tag": "0003_brainy_joseph",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788277165719,
+      "tag": "0004_amused_betty_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788284265112,
+      "tag": "0005_cynical_peter_quill",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788292044402,
+      "tag": "0006_familiar_jackpot",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788292063508,
+      "tag": "0007_backfill_movimiento_alta_inicial",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788562547047,
+      "tag": "0008_furry_frightful_four",
       "breakpoints": true
     }
   ]

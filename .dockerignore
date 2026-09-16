@@ -1,0 +1,33 @@
+# Lo que NUNCA debe entrar a la imagen.
+#
+# Sin este archivo, el `COPY . .` del Dockerfile mete el `.env` real dentro de
+# la imagen, con el DATABASE_URL y el BETTER_AUTH_SECRET adentro. Cualquiera
+# que tenga la imagen tiene las credenciales, aunque nunca vea el repositorio.
+.env
+.env.*
+!.env.example
+
+# Las credenciales tampoco tienen por qué viajar en el historial de git, que
+# `COPY . .` copiaría entero.
+.git
+.gitignore
+
+# Se instalan dentro del contenedor con `npm install`. Copiar los de la máquina
+# pisa esa instalación con binarios compilados para otro sistema operativo, y
+# además infla la imagen de ~150 MB a más de 600 MB.
+node_modules
+
+# Nada de esto corre en producción.
+tests
+coverage
+*.log
+.claude
+graphify-out
+
+# Documentación y configuración de desarrollo.
+README.md
+CLAUDE.md
+eslint.config.js
+jest.config.js
+Dockerfile
+.dockerignore

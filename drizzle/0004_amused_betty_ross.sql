@@ -1,0 +1,2 @@
+DROP INDEX "producto_comercio_codigoBarras_uidx";--> statement-breakpoint
+CREATE UNIQUE INDEX "producto_comercio_codigoBarras_uidx" ON "producto" USING btree ("comercio_id","codigo_barras") WHERE "producto"."activo" = true;

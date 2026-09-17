@@ -29,6 +29,20 @@ const SIGNO_POR_TIPO = { compra: +1, venta: -1, merma: -1 };
 const TIPOS_ACEPTADOS = [...Object.keys(SIGNO_POR_TIPO), "ajuste"];
 const SENTIDOS_VALIDOS = { entrada: +1, salida: -1 };
 
+/**
+ * Tipos que no se entienden sin una explicacion escrita (HU-15).
+ *
+ * Una compra o una venta se explican solas: hubo una operacion comercial
+ * detras. Un ajuste y una merma, no — son la correccion de una diferencia
+ * entre el stock del sistema y el real, y sin el motivo el libro dice que
+ * faltan seis unidades pero no por que. Ese "por que" es lo que hace auditable
+ * la correccion.
+ */
+const TIPOS_QUE_EXIGEN_MOTIVO = ["ajuste", "merma"];
+
+/** Largo de `movimiento.motivo`, que es un varchar(255). */
+const MOTIVO_MAXIMO = 255;
+
 /** Maximo de un `integer` de Postgres, que es el tipo de `cantidad`. */
 const CANTIDAD_MAXIMA = 2147483647;
 
@@ -100,10 +114,36 @@ export function validarDatosMovimiento(datosCrudos = {}) {
     }
   }
 
+  // El motivo se recorta antes de medirlo: "   " es una cadena no vacia para
+  // JavaScript, pero no es un motivo. Mismo criterio de trim que el tipo y el
+  // sentido de arriba.
+  const motivoCrudo =
+    typeof datosCrudos.motivo === "string" ? datosCrudos.motivo.trim() : "";
+
+  if (TIPOS_QUE_EXIGEN_MOTIVO.includes(tipo) && motivoCrudo === "") {
+    throw new ErrorDeNegocio(
+      `Un movimiento de tipo "${tipo}" requiere indicar el motivo`,
+      400,
+    );
+  }
+
+  // El tope tiene que estar aca y no solo en la base, por lo mismo que la
+  // cantidad: un texto mas largo falla en el INSERT con 22001, que sale como
+  // 500 en vez del 400 que corresponde.
+  if (motivoCrudo.length > MOTIVO_MAXIMO) {
+    throw new ErrorDeNegocio(
+      `El motivo no puede superar los ${MOTIVO_MAXIMO} caracteres`,
+      400,
+    );
+  }
+
   const datos = {
     productoId: datosCrudos.productoId,
     tipo,
     cantidad: signo * cantidad,
+    // null y no "" cuando no viene: la columna es nullable, y una cadena vacia
+    // guardada seria un motivo que existe y no dice nada.
+    motivo: motivoCrudo === "" ? null : motivoCrudo,
     proveedorId: null,
     ubicacionId: undefined,
   };
@@ -229,6 +269,7 @@ export async function aplicarMovimiento(
     usuarioId,
     tipo,
     cantidad,
+    motivo = null,
     proveedorId = null,
     transferenciaId = null,
   },
@@ -286,6 +327,7 @@ export async function aplicarMovimiento(
       usuarioId,
       tipo,
       cantidad,
+      motivo,
       proveedorId,
       transferenciaId,
     })
@@ -345,6 +387,7 @@ export async function registrarMovimiento(
       usuarioId,
       tipo: datos.tipo,
       cantidad: datos.cantidad,
+      motivo: datos.motivo,
       proveedorId: datos.proveedorId,
     });
   });

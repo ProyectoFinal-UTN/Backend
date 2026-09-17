@@ -1,0 +1,1 @@
+ALTER TABLE "movimiento" ADD COLUMN "motivo" varchar(255);

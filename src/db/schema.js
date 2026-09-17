@@ -369,6 +369,13 @@ export const movimiento = pgTable(
       .references(() => user.id, { onDelete: "restrict" }),
     tipo: tipoMovimiento("tipo").notNull(),
     cantidad: integer("cantidad").notNull(),
+    // Motivo del movimiento (HU-15). Nullable en la base a proposito: una
+    // compra o una venta no lo necesitan, y las transferencias de HU-12 se
+    // explican solas por el par ligado. La obligatoriedad para `ajuste` y
+    // `merma` se valida en movimientos.service.js y no con un NOT NULL, que
+    // ademas romperia las filas que el libro ya tiene cargadas (el libro es
+    // append-only: no se pueden completar hacia atras).
+    motivo: varchar("motivo", { length: 255 }),
     // FK pendiente cuando exista PROVEEDOR (HU-19)
     proveedorId: uuid("proveedor_id"),
     // FK pendiente + logica de 2 filas ligadas cuando se implemente HU-12

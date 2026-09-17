@@ -383,6 +383,10 @@ export async function crearProducto(comercioId, usuarioId, datosCrudos = {}) {
           usuarioId,
           tipo: "ajuste",
           cantidad: datos.stockActual,
+          // Desde HU-15 todo ajuste lleva motivo. Este no lo escribe un
+          // usuario —lo genera el alta—, asi que se completa aca y no queda
+          // como el unico ajuste del libro sin explicacion.
+          motivo: "Stock inicial del alta del producto",
         });
 
         return { ...nuevoProducto, stock: nuevoStock };

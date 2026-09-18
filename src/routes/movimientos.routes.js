@@ -14,6 +14,123 @@ router.use(requireAuth);
 /**
  * @openapi
  * /api/movimientos:
+ *   get:
+ *     summary: Historial de movimientos de stock con filtros (HU-14)
+ *     description: >
+ *       Devuelve el libro de movimientos del comercio, del más nuevo al más
+ *       viejo y paginado. Los filtros son opcionales y combinables entre sí.
+ *
+ *
+ *       Cada movimiento trae todos sus datos asociados: producto (aunque esté
+ *       dado de baja), ubicación y usuario que lo registró. La `cantidad` sale
+ *       con signo, tal como está en el libro: entrada `+`, salida `−`.
+ *
+ *
+ *       `desde` y `hasta` son instantes con zona, no días: el cliente resuelve
+ *       dónde empieza y termina el día en la hora local del usuario y manda los
+ *       límites ya calculados. Los dos son inclusivos.
+ *
+ *
+ *       Lo pueden consultar los tres roles (`movimiento: read`).
+ *     tags: [Movimientos]
+ *     parameters:
+ *       - in: query
+ *         name: desde
+ *         schema: { type: string, format: date-time, example: "2026-09-01T03:00:00.000Z" }
+ *         description: Fecha y hora mínima, inclusiva. ISO 8601 con zona.
+ *       - in: query
+ *         name: hasta
+ *         schema: { type: string, format: date-time, example: "2026-09-19T02:59:59.999Z" }
+ *         description: Fecha y hora máxima, inclusiva. ISO 8601 con zona.
+ *       - in: query
+ *         name: productoId
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: tipo
+ *         schema:
+ *           type: string
+ *           enum: [compra, venta, ajuste, merma, transferencia]
+ *       - in: query
+ *         name: proveedorId
+ *         schema: { type: string, format: uuid }
+ *         description: >
+ *           Proveedor asociado al movimiento. La tabla PROVEEDOR llega con
+ *           HU-19; hasta entonces se filtra por el id guardado en el libro.
+ *       - in: query
+ *         name: ubicacionId
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: pagina
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - in: query
+ *         name: limite
+ *         schema: { type: integer, minimum: 1, default: 50, maximum: 200 }
+ *         description: Si se pide más del máximo, se recorta a 200.
+ *     responses:
+ *       200:
+ *         description: Página de movimientos y datos de paginación
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 movimientos:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string, format: uuid }
+ *                       fecha: { type: string, format: date-time }
+ *                       tipo: { type: string, example: venta }
+ *                       cantidad: { type: integer, example: -3 }
+ *                       motivo: { type: string, nullable: true }
+ *                       proveedorId: { type: string, format: uuid, nullable: true }
+ *                       transferenciaId: { type: string, format: uuid, nullable: true }
+ *                       producto:
+ *                         type: object
+ *                         properties:
+ *                           id: { type: string, format: uuid }
+ *                           nombre: { type: string }
+ *                           codigoBarras: { type: string }
+ *                           unidadMedida: { type: string }
+ *                           activo: { type: boolean }
+ *                       ubicacion:
+ *                         type: object
+ *                         properties:
+ *                           id: { type: string, format: uuid }
+ *                           nombre: { type: string }
+ *                       usuario:
+ *                         type: object
+ *                         properties:
+ *                           id: { type: string }
+ *                           nombre: { type: string }
+ *                           correo: { type: string }
+ *                 paginacion:
+ *                   type: object
+ *                   properties:
+ *                     pagina: { type: integer }
+ *                     limite: { type: integer }
+ *                     total: { type: integer }
+ *                     totalPaginas: { type: integer }
+ *       400:
+ *         description: >
+ *           Algún filtro es inválido: fecha sin formato ISO con zona, `desde`
+ *           posterior a `hasta`, tipo desconocido, id que no es UUID, o
+ *           `pagina`/`limite` que no son enteros positivos
+ *       401:
+ *         description: No hay sesión activa
+ *       403:
+ *         description: El rol no puede consultar movimientos
+ */
+router.get(
+  "/",
+  requirePermission({ movimiento: ["read"] }),
+  controller.listar,
+);
+
+/**
+ * @openapi
+ * /api/movimientos:
  *   post:
  *     summary: Registra un movimiento de entrada o salida de stock (HU-13, HU-15)
  *     description: >

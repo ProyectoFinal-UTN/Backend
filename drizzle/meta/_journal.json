@@ -64,6 +64,13 @@
       "when": 1788562547047,
       "tag": "0008_furry_frightful_four",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789686778291,
+      "tag": "0009_closed_firestar",
+      "breakpoints": true
     }
   ]
 }

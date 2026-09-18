@@ -30,9 +30,10 @@ describe("validarDatosMovimiento — signo según el tipo", () => {
   });
 
   test("una merma resta", () => {
-    expect(validarDatosMovimiento(movimiento({ tipo: "merma" })).cantidad).toBe(
-      -3,
-    );
+    expect(
+      validarDatosMovimiento(movimiento({ tipo: "merma", motivo: "Rotura" }))
+        .cantidad,
+    ).toBe(-3);
   });
 
   test("normaliza el tipo con espacios y mayúsculas", () => {
@@ -45,15 +46,17 @@ describe("validarDatosMovimiento — signo según el tipo", () => {
 describe("validarDatosMovimiento — ajuste", () => {
   test("con sentido entrada suma", () => {
     expect(
-      validarDatosMovimiento(movimiento({ tipo: "ajuste", sentido: "entrada" }))
-        .cantidad,
+      validarDatosMovimiento(
+        movimiento({ tipo: "ajuste", sentido: "entrada", motivo: "Recuento" }),
+      ).cantidad,
     ).toBe(3);
   });
 
   test("con sentido salida resta", () => {
     expect(
-      validarDatosMovimiento(movimiento({ tipo: "ajuste", sentido: "salida" }))
-        .cantidad,
+      validarDatosMovimiento(
+        movimiento({ tipo: "ajuste", sentido: "salida", motivo: "Recuento" }),
+      ).cantidad,
     ).toBe(-3);
   });
 
@@ -76,6 +79,78 @@ describe("validarDatosMovimiento — ajuste", () => {
       validarDatosMovimiento(movimiento({ tipo: "venta", sentido: "entrada" }))
         .cantidad,
     ).toBe(-3);
+  });
+});
+
+describe("validarDatosMovimiento — motivo (HU-15)", () => {
+  test("un ajuste sin motivo se rechaza", () => {
+    expect(() =>
+      validarDatosMovimiento(movimiento({ tipo: "ajuste", sentido: "salida" })),
+    ).toThrow(/motivo/i);
+  });
+
+  test("una merma sin motivo se rechaza", () => {
+    expect(() => validarDatosMovimiento(movimiento({ tipo: "merma" }))).toThrow(
+      /motivo/i,
+    );
+  });
+
+  test("un motivo en blanco no cuenta como motivo", () => {
+    expect(() =>
+      validarDatosMovimiento(movimiento({ tipo: "merma", motivo: "    " })),
+    ).toThrow(/motivo/i);
+  });
+
+  test("un motivo que no es texto se rechaza", () => {
+    // Sin el typeof, un 42 mal serializado entraria como motivo "42" en un
+    // libro que despues no se puede editar.
+    expect(() =>
+      validarDatosMovimiento(movimiento({ tipo: "merma", motivo: 42 })),
+    ).toThrow(/motivo/i);
+  });
+
+  test("recorta los espacios del motivo", () => {
+    expect(
+      validarDatosMovimiento(
+        movimiento({ tipo: "merma", motivo: "  Producto vencido  " }),
+      ).motivo,
+    ).toBe("Producto vencido");
+  });
+
+  test("una compra no necesita motivo y queda en null", () => {
+    expect(validarDatosMovimiento(movimiento({ tipo: "compra" })).motivo).toBe(
+      null,
+    );
+  });
+
+  test("una venta puede llevar motivo igual, y se guarda", () => {
+    expect(
+      validarDatosMovimiento(
+        movimiento({ tipo: "venta", motivo: "Venta mostrador" }),
+      ).motivo,
+    ).toBe("Venta mostrador");
+  });
+
+  test("un motivo vacío en una compra queda en null, no en cadena vacía", () => {
+    expect(
+      validarDatosMovimiento(movimiento({ tipo: "compra", motivo: "   " }))
+        .motivo,
+    ).toBe(null);
+  });
+
+  test("acepta un motivo de exactamente 255 caracteres", () => {
+    const motivo = "a".repeat(255);
+    expect(
+      validarDatosMovimiento(movimiento({ tipo: "merma", motivo })).motivo,
+    ).toBe(motivo);
+  });
+
+  test("rechaza un motivo que no entra en la columna", () => {
+    expect(() =>
+      validarDatosMovimiento(
+        movimiento({ tipo: "merma", motivo: "a".repeat(256) }),
+      ),
+    ).toThrow(/255/);
   });
 });
 

@@ -15,7 +15,7 @@ router.use(requireAuth);
  * @openapi
  * /api/movimientos:
  *   post:
- *     summary: Registra un movimiento de entrada o salida de stock (HU-13)
+ *     summary: Registra un movimiento de entrada o salida de stock (HU-13, HU-15)
  *     description: >
  *       Inserta el movimiento en el libro y actualiza el stock del producto en
  *       la misma transacción, de forma atómica. La `cantidad` se envía siempre
@@ -25,6 +25,12 @@ router.use(requireAuth);
  *
  *       Si el comercio tiene una sola ubicación, `ubicacionId` puede omitirse.
  *       No se permite descontar más unidades de las disponibles.
+ *
+ *
+ *       Los ajustes y las mermas (HU-15) exigen `motivo`: son correcciones
+ *       entre el stock del sistema y el real, y sin la explicación el libro
+ *       registra la diferencia pero no por qué se produjo. Quedan
+ *       diferenciados de compras y ventas por el campo `tipo`.
  *     tags: [Movimientos]
  *     requestBody:
  *       required: true
@@ -54,6 +60,15 @@ router.use(requireAuth);
  *                 type: string
  *                 enum: [entrada, salida]
  *                 description: Obligatorio solo cuando el tipo es `ajuste`.
+ *               motivo:
+ *                 type: string
+ *                 maxLength: 255
+ *                 example: Rotura de mercadería en el depósito
+ *                 description: >
+ *                   Por qué se hace el movimiento. **Obligatorio** cuando el
+ *                   tipo es `ajuste` o `merma`, y no puede venir vacío ni en
+ *                   blanco. En una compra o una venta es opcional: si no se
+ *                   manda, se guarda `null`.
  *               ubicacionId:
  *                 type: string
  *                 format: uuid
@@ -72,7 +87,8 @@ router.use(requireAuth);
  *           con signo) y el stock resultante de esa ubicación.
  *       400:
  *         description: >
- *           Datos inválidos, ajuste sin sentido, o falta `ubicacionId` en un
+ *           Datos inválidos, ajuste sin sentido, ajuste o merma sin `motivo`,
+ *           `motivo` de más de 255 caracteres, o falta `ubicacionId` en un
  *           comercio con más de una ubicación
  *       401:
  *         description: No hay sesión activa

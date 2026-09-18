@@ -175,6 +175,7 @@ describe("Entradas y salidas", () => {
       productoId: producto.id,
       tipo: "merma",
       cantidad: 2,
+      motivo: "Producto vencido",
     });
 
     expect(respuesta.status).toBe(201);
@@ -190,6 +191,7 @@ describe("Entradas y salidas", () => {
       tipo: "ajuste",
       cantidad: 5,
       sentido: "entrada",
+      motivo: "Recuento físico",
     });
     expect(suma.status).toBe(201);
     expect(suma.body.stock.cantidad).toBe(25);
@@ -199,6 +201,7 @@ describe("Entradas y salidas", () => {
       tipo: "ajuste",
       cantidad: 5,
       sentido: "salida",
+      motivo: "Recuento físico",
     });
     expect(resta.status).toBe(201);
     expect(resta.body.stock.cantidad).toBe(20);
@@ -221,6 +224,196 @@ describe("Entradas y salidas", () => {
     expect(respuesta.body.movimiento.productoId).toBe(producto.id);
     // Se persiste sin validar contra PROVEEDOR: esa tabla la crea HU-19.
     expect(respuesta.body.movimiento.proveedorId).toBe(proveedorId);
+  });
+});
+
+describe("Ajustes y mermas (HU-15)", () => {
+  test("una merma sin motivo se rechaza con 400 y no mueve el stock", async () => {
+    const producto = await crearProducto(propietarioA.cookie, 20);
+
+    const respuesta = await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "merma",
+      cantidad: 2,
+    });
+
+    expect(respuesta.status).toBe(400);
+    expect(await leerStock(producto.stock.id)).toBe(20);
+  });
+
+  test("un ajuste sin motivo se rechaza con 400", async () => {
+    const producto = await crearProducto(propietarioA.cookie, 20);
+
+    const respuesta = await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "ajuste",
+      cantidad: 2,
+      sentido: "salida",
+    });
+
+    expect(respuesta.status).toBe(400);
+    expect(await leerStock(producto.stock.id)).toBe(20);
+  });
+
+  test("un motivo en blanco no alcanza", async () => {
+    const producto = await crearProducto(propietarioA.cookie, 20);
+
+    const respuesta = await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "merma",
+      cantidad: 2,
+      motivo: "   ",
+    });
+
+    expect(respuesta.status).toBe(400);
+  });
+
+  test("una merma con motivo se registra y lo persiste", async () => {
+    const producto = await crearProducto(propietarioA.cookie, 20);
+
+    const respuesta = await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "merma",
+      cantidad: 3,
+      motivo: "Mercadería vencida",
+    });
+
+    expect(respuesta.status).toBe(201);
+    expect(respuesta.body.movimiento.motivo).toBe("Mercadería vencida");
+    expect(respuesta.body.movimiento.tipo).toBe("merma");
+    expect(respuesta.body.stock.cantidad).toBe(17);
+
+    const [guardado] = await db
+      .select({ tipo: movimiento.tipo, motivo: movimiento.motivo })
+      .from(movimiento)
+      .where(eq(movimiento.id, respuesta.body.movimiento.id));
+
+    expect(guardado).toEqual({ tipo: "merma", motivo: "Mercadería vencida" });
+  });
+
+  test("un ajuste con motivo se registra en los dos sentidos", async () => {
+    const producto = await crearProducto(propietarioA.cookie, 20);
+
+    const salida = await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "ajuste",
+      cantidad: 4,
+      sentido: "salida",
+      motivo: "Faltante detectado en el recuento",
+    });
+    expect(salida.status).toBe(201);
+    expect(salida.body.movimiento.motivo).toBe(
+      "Faltante detectado en el recuento",
+    );
+    expect(salida.body.stock.cantidad).toBe(16);
+
+    const entrada = await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "ajuste",
+      cantidad: 4,
+      sentido: "entrada",
+      motivo: "Aparecieron las unidades del recuento anterior",
+    });
+    expect(entrada.status).toBe(201);
+    expect(entrada.body.movimiento.motivo).toBe(
+      "Aparecieron las unidades del recuento anterior",
+    );
+    expect(entrada.body.stock.cantidad).toBe(20);
+  });
+
+  test("el motivo se guarda recortado", async () => {
+    const producto = await crearProducto(propietarioA.cookie, 20);
+
+    const respuesta = await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "merma",
+      cantidad: 1,
+      motivo: "  Rotura  ",
+    });
+
+    expect(respuesta.status).toBe(201);
+    expect(respuesta.body.movimiento.motivo).toBe("Rotura");
+  });
+
+  test("una compra no exige motivo: se registra con motivo null", async () => {
+    const producto = await crearProducto(propietarioA.cookie, 20);
+
+    const respuesta = await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "compra",
+      cantidad: 5,
+    });
+
+    expect(respuesta.status).toBe(201);
+    expect(respuesta.body.movimiento.motivo).toBe(null);
+  });
+
+  test("un motivo más largo que la columna da 400 y no 500", async () => {
+    const producto = await crearProducto(propietarioA.cookie, 20);
+
+    const respuesta = await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "merma",
+      cantidad: 1,
+      motivo: "a".repeat(256),
+    });
+
+    expect(respuesta.status).toBe(400);
+  });
+
+  test("el ajuste y la merma quedan diferenciados de la compra y la venta en el libro", async () => {
+    // Criterio de aceptación de HU-15: en el historial se distinguen. El dato
+    // que los distingue es `tipo`, y el `motivo` es lo que explica por qué.
+    const producto = await crearProducto(propietarioA.cookie, 20);
+
+    await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "compra",
+      cantidad: 10,
+    });
+    await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "venta",
+      cantidad: 2,
+    });
+    await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "merma",
+      cantidad: 1,
+      motivo: "Rotura",
+    });
+    await registrarMovimiento(propietarioA.cookie, {
+      productoId: producto.id,
+      tipo: "ajuste",
+      cantidad: 3,
+      sentido: "salida",
+      motivo: "Diferencia de inventario",
+    });
+
+    const libro = await db
+      .select({ tipo: movimiento.tipo, motivo: movimiento.motivo })
+      .from(movimiento)
+      .where(eq(movimiento.productoId, producto.id));
+
+    const correcciones = libro.filter((fila) =>
+      ["ajuste", "merma"].includes(fila.tipo),
+    );
+    const operaciones = libro.filter((fila) =>
+      ["compra", "venta"].includes(fila.tipo),
+    );
+
+    // El alta del producto deja ademas su propio ajuste inicial, con su motivo.
+    expect(correcciones).toHaveLength(3);
+    expect(operaciones).toHaveLength(2);
+
+    // Toda correccion tiene su explicacion; ninguna operacion comercial la
+    // necesito.
+    for (const fila of correcciones) {
+      expect(fila.motivo).toBeTruthy();
+    }
+    for (const fila of operaciones) {
+      expect(fila.motivo).toBe(null);
+    }
   });
 });
 
@@ -276,6 +469,7 @@ describe("Stock insuficiente", () => {
       tipo: "ajuste",
       cantidad: 6,
       sentido: "salida",
+      motivo: "Recuento físico",
     });
 
     expect(respuesta.status).toBe(409);
@@ -539,12 +733,14 @@ describe("Invariante del modelo híbrido", () => {
       productoId: producto.id,
       tipo: "merma",
       cantidad: 1,
+      motivo: "Rotura en depósito",
     });
     await registrarMovimiento(propietarioA.cookie, {
       productoId: producto.id,
       tipo: "ajuste",
       cantidad: 2,
       sentido: "salida",
+      motivo: "Diferencia de inventario",
     });
 
     const [libro] = await db

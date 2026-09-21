@@ -15,6 +15,7 @@ import invitacionesRoutes from "./routes/invitaciones.routes.js";
 import miembrosRoutes from "./routes/miembros.routes.js";
 import movimientosRoutes from "./routes/movimientos.routes.js";
 import productosRoutes from "./routes/productos.routes.js";
+import transferenciasRoutes from "./routes/transferencias.routes.js";
 import ubicacionesRoutes from "./routes/ubicaciones.routes.js";
 
 export const app = express();
@@ -293,6 +294,7 @@ app.use("/api/ubicaciones", ubicacionesRoutes);
 app.use("/api/configuracion", configuracionRoutes);
 app.use("/api/productos", productosRoutes);
 app.use("/api/movimientos", movimientosRoutes);
+app.use("/api/transferencias", transferenciasRoutes);
 
 // Manejador de errores: cierra la cadena para que un throw en un service no
 // deje la request colgada. Va siempre ultimo.

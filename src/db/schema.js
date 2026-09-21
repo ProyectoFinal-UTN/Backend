@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   pgEnum,
@@ -378,8 +379,14 @@ export const movimiento = pgTable(
     motivo: varchar("motivo", { length: 255 }),
     // FK pendiente cuando exista PROVEEDOR (HU-19)
     proveedorId: uuid("proveedor_id"),
-    // FK pendiente + logica de 2 filas ligadas cuando se implemente HU-12
-    transferenciaId: uuid("transferencia_id"),
+    // Liga las dos patas de una transferencia (HU-12): la fila con cantidad
+    // negativa en la ubicacion de origen y la positiva en la de destino
+    // comparten este id. Nullable: los movimientos que no son transferencias
+    // —que son la mayoria— no tienen ninguno.
+    transferenciaId: uuid("transferencia_id").references(
+      () => transferencia.id,
+      { onDelete: "restrict" },
+    ),
     fecha: timestamp("fecha").defaultNow().notNull(),
   },
   (table) => [
@@ -393,6 +400,77 @@ export const movimiento = pgTable(
     index("movimiento_ubicacionId_idx").on(table.ubicacionId),
     // Para el filtro por rango de fechas del historial (HU-14).
     index("movimiento_fecha_idx").on(table.fecha),
+    // Para traer las dos patas de una transferencia sin escanear el libro
+    // entero (HU-12).
+    index("movimiento_transferenciaId_idx").on(table.transferenciaId),
+  ],
+);
+
+/**
+ * Encabezado de una transferencia de stock entre dos ubicaciones (HU-12).
+ *
+ * El movimiento real de la mercaderia son las DOS filas de `movimiento` que
+ * comparten `transferencia_id`: -N en la ubicacion de origen, +N en la de
+ * destino. Esta tabla guarda una sola vez lo que es comun a las dos —origen,
+ * destino, quien la hizo y por que— y nada mas.
+ *
+ * No lleva `producto_id` ni `cantidad` a proposito: los dicen los dos
+ * movimientos, y repetirlos aca crearia un segundo invariante que mantener
+ * sincronizado con el libro (el modelo ya tiene uno, el de `stock`). Ademas
+ * deja abierta la transferencia de varios productos de una: serian 2N
+ * movimientos colgando del mismo encabezado, sin migrar la tabla.
+ *
+ * Tampoco lleva `proveedor_id`: una transferencia es un movimiento interno
+ * entre dos ubicaciones del mismo comercio, no hay contraparte externa. El
+ * proveedor de esa mercaderia esta en el movimiento de compra que la hizo
+ * entrar.
+ *
+ * Sin `createdAt`/`updatedAt`, igual que `movimiento` y por lo mismo: `fecha`
+ * ya es el momento de insercion, y la fila no se modifica nunca.
+ */
+export const transferencia = pgTable(
+  "transferencia",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    comercioId: uuid("comercio_id")
+      .notNull()
+      .references(() => comercio.id, { onDelete: "cascade" }),
+    // restrict y no cascade, igual que en `movimiento`: la transferencia es
+    // parte del libro append-only, asi que borrar una ubicacion o un usuario
+    // no puede llevarse puesto el registro de que la mercaderia se movio.
+    ubicacionOrigenId: uuid("ubicacion_origen_id")
+      .notNull()
+      .references(() => ubicacion.id, { onDelete: "restrict" }),
+    ubicacionDestinoId: uuid("ubicacion_destino_id")
+      .notNull()
+      .references(() => ubicacion.id, { onDelete: "restrict" }),
+    // text y no uuid: los ids de Better Auth son text (ver la tabla `user`).
+    usuarioId: text("usuario_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    // Opcional: a diferencia del ajuste y la merma (HU-15), una transferencia
+    // se explica sola por el par ligado. Si viene, se guarda tambien en los
+    // dos movimientos.
+    motivo: varchar("motivo", { length: 255 }),
+    fecha: timestamp("fecha").defaultNow().notNull(),
+  },
+  (table) => [
+    index("transferencia_comercioId_idx").on(table.comercioId),
+    // Las FK hacia `ubicacion` son RESTRICT: cada DELETE /api/ubicaciones/:id
+    // obliga a Postgres a buscar si alguna transferencia la referencia, y sin
+    // indice eso es un scan de la tabla entera. Mismo motivo que
+    // `movimiento_ubicacionId_idx`. `usuario_id` queda sin indice igual que
+    // en `movimiento`: borrar un usuario es raro y no es un camino del negocio.
+    index("transferencia_ubicacionOrigenId_idx").on(table.ubicacionOrigenId),
+    index("transferencia_ubicacionDestinoId_idx").on(table.ubicacionDestinoId),
+    // La validacion de origen != destino esta en el service y devuelve un 400
+    // con mensaje; esto es la red de abajo, para que ninguna escritura futura
+    // pueda dejar una transferencia de una ubicacion a si misma (que movería
+    // stock contra si mismo y dejaria dos movimientos que se cancelan).
+    check(
+      "transferencia_ubicaciones_distintas_check",
+      sql`${table.ubicacionOrigenId} <> ${table.ubicacionDestinoId}`,
+    ),
   ],
 );
 

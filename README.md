@@ -115,26 +115,29 @@ routes → controller → service → db
 
 ## Cómo agregar un módulo nuevo (una Épica nueva)
 
-Seguir el mismo patrón que ya está armado para `usuarios`. Por ejemplo, para arrancar el módulo de **productos**:
+Seguir el mismo patrón que ya tienen los módulos armados, por ejemplo `ubicaciones.*`. Para arrancar un módulo de **proveedores**:
 
-1. Crear `src/routes/productos.routes.js`:
+1. Crear `src/routes/proveedores.routes.js`. Cada ruta lleva su `requirePermission` (HU-32): hay un test que recorre todas las rutas montadas y falla si alguna no lo tiene.
 
 ```js
 import { Router } from "express";
+import { requireAuth, requirePermission } from "../middlewares/auth.middleware.js";
 const router = Router();
-// rutas acá
+router.use(requireAuth);
+router.get("/", requirePermission({ proveedor: ["read"] }), controller.listar);
 export default router;
 ```
 
-2. Crear `src/controllers/productos.controller.js` y `src/services/productos.service.js` siguiendo el mismo esquema que `usuarios.*`.
-3. Montar la ruta en `src/index.js`:
+2. Crear `src/controllers/proveedores.controller.js` y `src/services/proveedores.service.js`.
+3. Si el recurso es nuevo, sumarlo a la matriz de `src/lib/permissions.js` y repartirlo entre los tres roles.
+4. Montar la ruta en `src/app.js`, **debajo** de `app.use(auditarCambios)`:
 
 ```js
-import productosRoutes from "./routes/productos.routes.js";
-app.use("/api/productos", productosRoutes);
+import proveedoresRoutes from "./routes/proveedores.routes.js";
+app.use("/api/proveedores", proveedoresRoutes);
 ```
 
-4. Documentar cada endpoint con comentarios `@openapi` arriba de la ruta (ya funciona automático, Swagger escanea `src/index.js` y `src/routes/*.js`).
+5. Documentar cada endpoint con comentarios `@openapi` arriba de la ruta (ya funciona automático, Swagger escanea `src/app.js` y `src/routes/*.js`).
 
 ## Autenticación y roles
 
@@ -159,6 +162,9 @@ router.delete("/:id", requireAuth, requirePermission({ producto: ["delete"] }), 
 
 - **Multi-tenant**: `requireAuth` deja `req.comercioId` tomado **de la sesión**. Toda query de negocio filtra por ese valor, y nunca por un `comercio_id` que venga del body o la query string.
 - El rol **nunca** se valida con un `if` dentro de un controller — siempre por middleware.
+- **Control de acceso (HU-32)**: toda ruta de negocio lleva `requirePermission`. Las únicas excepciones son las dos rutas de invitaciones (ver una invitación sin cuenta y aceptarla sin tener rol todavía), listadas a mano en `tests/controlAcceso.test.js`.
+- **Datos recortados por rol**: cuando un endpoint se puede llamar pero parte de la respuesta depende del rol, el service consulta la matriz con `puede(rol, { recurso: ["accion"] })` de `src/lib/permissions.js`, nunca con un `if (rol === ...)`. Ejemplo: el historial de movimientos solo trae el correo de quien registró cada uno si el rol tiene `member: ["read"]`. Un rol sin permiso recibe siempre `403 { "error": "El rol no tiene permiso para esta accion" }`.
+- Los endpoints del plugin de organización de Better Auth (`/api/auth/organization/*`) están **cerrados** con 403: salteaban la matriz de permisos. El equipo se administra por `/api/miembros`.
 
 ## Tests y linter
 

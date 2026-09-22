@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { comercio } from "../db/schema.js";
 import { ErrorDeNegocio } from "../lib/errores.js";
+import { permisosDe } from "../lib/permissions.js";
 import { listarUbicaciones } from "./ubicaciones.service.js";
 
 /**
@@ -17,9 +18,13 @@ export const MONEDAS_VALIDAS = ["ARS", "USD", "EUR", "BRL", "CLP", "UYU"];
 /**
  * Devuelve los parametros generales del negocio.
  *
- * Incluye el `rol` de quien pregunta para que la pantalla pueda esconder los
- * controles que ese rol no puede usar (HU-4). Es solo presentacion: quien
- * igual intente la operacion se la rechaza `requirePermission` en el endpoint.
+ * Incluye el `rol` de quien pregunta y sus `permisos` efectivos, para que la
+ * pantalla pueda esconder los controles que ese rol no puede usar (HU-4,
+ * HU-32). Los permisos salen de la misma matriz que valida los endpoints, asi
+ * que el Frontend no mantiene una copia propia que se desincronice.
+ *
+ * Es solo presentacion: quien igual intente la operacion se la rechaza
+ * `requirePermission` en el endpoint.
  */
 export async function obtenerConfiguracion(comercioId, rol) {
   const [datos] = await db
@@ -32,7 +37,12 @@ export async function obtenerConfiguracion(comercioId, rol) {
     throw new ErrorDeNegocio("El comercio no existe", 404);
   }
 
-  return { ...datos, rol, ubicaciones: await listarUbicaciones(comercioId) };
+  return {
+    ...datos,
+    rol,
+    permisos: permisosDe(rol),
+    ubicaciones: await listarUbicaciones(comercioId),
+  };
 }
 
 export async function actualizarMoneda(comercioId, monedaCruda) {

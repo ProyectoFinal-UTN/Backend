@@ -373,7 +373,9 @@ describe("Creación directa de organizaciones", () => {
       .set("Cookie", propietarioA.cookie)
       .send({ name: "Comercio paralelo", slug: `paralelo-${SUFIJO}` });
 
-    expect(respuesta.status).toBeGreaterThanOrEqual(400);
+    // Desde HU-32 todo `/api/auth/organization/*` esta cerrado con el 403 de
+    // siempre, antes de llegar al plugin.
+    expect(respuesta.status).toBe(403);
 
     // Y el comercio original sigue funcionando.
     const sigueAndando = await request(app)

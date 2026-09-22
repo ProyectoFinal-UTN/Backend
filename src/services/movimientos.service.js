@@ -9,6 +9,7 @@ import {
   user,
 } from "../db/schema.js";
 import { ErrorDeNegocio, esUuid } from "../lib/errores.js";
+import { puede } from "../lib/permissions.js";
 
 /**
  * Logica de negocio del registro de movimientos de stock (HU-13).
@@ -47,11 +48,16 @@ const SENTIDOS_VALIDOS = { entrada: +1, salida: -1 };
  */
 const TIPOS_QUE_EXIGEN_MOTIVO = ["ajuste", "merma"];
 
-/** Largo de `movimiento.motivo`, que es un varchar(255). */
-const MOTIVO_MAXIMO = 255;
+/**
+ * Largo de `movimiento.motivo`, que es un varchar(255).
+ *
+ * Exportada para que transferencias.service.js (HU-12) valide contra el mismo
+ * limite y devuelva el mismo mensaje, en vez de repetir el numero.
+ */
+export const MOTIVO_MAXIMO = 255;
 
 /** Maximo de un `integer` de Postgres, que es el tipo de `cantidad`. */
-const CANTIDAD_MAXIMA = 2147483647;
+export const CANTIDAD_MAXIMA = 2147483647;
 
 /**
  * Valida y normaliza los datos de un movimiento.
@@ -180,8 +186,11 @@ export function validarDatosMovimiento(datosCrudos = {}) {
  * El filtro por `activo` importa: HU-9 borra logicamente, y registrar un
  * movimiento sobre un producto eliminado reviviria su stock sin que el producto
  * vuelva a aparecer en ningun listado.
+ *
+ * Exportada: la transferencia de HU-12 hace exactamente la misma verificacion
+ * y tiene que devolver el mismo 404.
  */
-async function exigirProductoDelComercio(tx, comercioId, productoId) {
+export async function exigirProductoDelComercio(tx, comercioId, productoId) {
   const [fila] = await tx
     .select({ id: producto.id })
     .from(producto)
@@ -213,8 +222,11 @@ async function exigirProductoDelComercio(tx, comercioId, productoId) {
  * crea ninguna ubicacion por defecto: crear una "Principal" como efecto
  * secundario de registrar una venta seria una sorpresa, y sin ubicaciones
  * tampoco puede haber stock que mover.
+ *
+ * Exportada: la transferencia de HU-12 la usa dos veces, siempre con el id
+ * explicito (origen y destino son obligatorios ahi, no se infiere ninguno).
  */
-async function resolverUbicacion(tx, comercioId, ubicacionId) {
+export async function resolverUbicacion(tx, comercioId, ubicacionId) {
   if (ubicacionId) {
     const [existente] = await tx
       .select({ id: ubicacion.id })
@@ -545,9 +557,16 @@ export function validarFiltrosHistorial(query = {}) {
  *
  * El proveedor sale como id: la tabla PROVEEDOR llega con HU-19. Cuando exista,
  * se suma el join para devolver tambien el nombre.
+ *
+ * El correo de quien registro cada movimiento solo sale para los roles que
+ * pueden ver el equipo (`member: ["read"]`). Un empleado no ve la lista del
+ * equipo (HU-4), y el historial no puede ser la puerta de atras para juntar
+ * los correos de todos (HU-32). El nombre si sale: sin el, el historial no
+ * dice quien hizo que. Sin `rol`, no hay correos: el recorte es el default.
  */
-export async function listarMovimientos(comercioId, query = {}) {
+export async function listarMovimientos(comercioId, query = {}, rol = null) {
   const filtros = validarFiltrosHistorial(query);
+  const verCorreos = puede(rol, { member: ["read"] });
 
   const condiciones = [eq(movimiento.comercioId, comercioId)];
 
@@ -591,7 +610,8 @@ export async function listarMovimientos(comercioId, query = {}) {
         ubicacionNombre: ubicacion.nombre,
         usuarioId: user.id,
         usuarioNombre: user.name,
-        usuarioCorreo: user.email,
+        // Ni se lee si no se va a devolver.
+        ...(verCorreos ? { usuarioCorreo: user.email } : {}),
       })
       .from(movimiento)
       // inner joins: las tres FK son NOT NULL con `restrict`, asi que toda
@@ -628,7 +648,7 @@ export async function listarMovimientos(comercioId, query = {}) {
       usuario: {
         id: fila.usuarioId,
         nombre: fila.usuarioNombre,
-        correo: fila.usuarioCorreo,
+        ...(verCorreos ? { correo: fila.usuarioCorreo } : {}),
       },
     })),
     paginacion: {

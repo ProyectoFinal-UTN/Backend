@@ -7,6 +7,7 @@ import swaggerUi from "swagger-ui-express";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./lib/auth.js";
 import { auditarCambios } from "./middlewares/auditoria.middleware.js";
+import { bloquearOrganizacionDirecta } from "./middlewares/auth.middleware.js";
 import comerciosRoutes from "./routes/comercios.routes.js";
 import auditoriaRoutes from "./routes/auditoria.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
@@ -15,6 +16,7 @@ import invitacionesRoutes from "./routes/invitaciones.routes.js";
 import miembrosRoutes from "./routes/miembros.routes.js";
 import movimientosRoutes from "./routes/movimientos.routes.js";
 import productosRoutes from "./routes/productos.routes.js";
+import transferenciasRoutes from "./routes/transferencias.routes.js";
 import ubicacionesRoutes from "./routes/ubicaciones.routes.js";
 
 export const app = express();
@@ -209,7 +211,12 @@ app.use(cors({ origin: origenesPermitidos, credentials: true }));
  *     summary: Resto de los endpoints de autenticacion (Better Auth)
  *     description: >
  *       Better Auth expone aca el resto del ciclo de sesion (login, logout,
- *       recuperacion de contrasena) y los endpoints de organizacion.
+ *       recuperacion de contrasena, `get-session`).
+ *
+ *
+ *       **`organization/*` esta cerrado (HU-32)**: responde siempre 403. El
+ *       equipo se administra por `/api/miembros`, que valida el rol con la
+ *       matriz de permisos; los endpoints del plugin la salteaban.
  *     tags: [Auth]
  *     parameters:
  *       - in: path
@@ -220,7 +227,15 @@ app.use(cors({ origin: origenesPermitidos, credentials: true }));
  *     responses:
  *       200:
  *         description: Respuesta del endpoint de Better Auth
+ *       403:
+ *         description: >
+ *           La ruta es de `organization/*`
+ *           (`El rol no tiene permiso para esta accion`)
  */
+// Tiene que ir ANTES del handler de Better Auth, que si no responde primero.
+// Tampoco lee el body, asi que no rompe el orden con express.json().
+app.use("/api/auth", bloquearOrganizacionDirecta);
+
 // Va montado ANTES de express.json(): Better Auth necesita leer el body crudo.
 // Si se invierte el orden, todos los POST de auth fallan sin error claro.
 app.all("/api/auth/{*any}", toNodeHandler(auth));
@@ -293,6 +308,7 @@ app.use("/api/ubicaciones", ubicacionesRoutes);
 app.use("/api/configuracion", configuracionRoutes);
 app.use("/api/productos", productosRoutes);
 app.use("/api/movimientos", movimientosRoutes);
+app.use("/api/transferencias", transferenciasRoutes);
 
 // Manejador de errores: cierra la cadena para que un throw en un service no
 // deje la request colgada. Va siempre ultimo.

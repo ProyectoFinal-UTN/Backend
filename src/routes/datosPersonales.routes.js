@@ -1,6 +1,9 @@
 import { Router } from "express";
 import * as controller from "../controllers/datosPersonales.controller.js";
-import { requireAuth } from "../middlewares/auth.middleware.js";
+import {
+  requireAuth,
+  requirePermission,
+} from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
@@ -15,8 +18,10 @@ const router = Router();
  * Ya paso: dejo en 401 el `GET /api/invitaciones/:id` de HU-4, que a proposito
  * se puede ver sin sesion para decidir antes de crear la cuenta.
  *
- * Sin `requirePermission`: estos endpoints no dependen del rol. Cualquiera
- * tiene derecho sobre sus propios datos, incluido un empleado.
+ * Con `requirePermission` sobre `cuenta` (HU-32), aunque hoy lo tengan los
+ * tres roles: cualquiera tiene derecho sobre sus propios datos, incluido un
+ * empleado. Pasar por la matriz igual evita que estos sean los unicos
+ * endpoints con sesion que no validan el rol.
  */
 
 /**
@@ -44,7 +49,12 @@ const router = Router();
  *       401:
  *         description: No hay sesión activa
  */
-router.get("/mis-datos", requireAuth, controller.misDatos);
+router.get(
+  "/mis-datos",
+  requireAuth,
+  requirePermission({ cuenta: ["read"] }),
+  controller.misDatos,
+);
 
 /**
  * @openapi
@@ -79,6 +89,11 @@ router.get("/mis-datos", requireAuth, controller.misDatos);
  *       409:
  *         description: Es el único propietario de un comercio
  */
-router.delete("/mi-cuenta", requireAuth, controller.darDeBaja);
+router.delete(
+  "/mi-cuenta",
+  requireAuth,
+  requirePermission({ cuenta: ["delete"] }),
+  controller.darDeBaja,
+);
 
 export default router;

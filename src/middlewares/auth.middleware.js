@@ -50,6 +50,13 @@ export async function requireAuth(req, res, next) {
 }
 
 /**
+ * Unico mensaje de "no te toca" de la API (HU-32). Lo usan `requireRole`,
+ * `requirePermission` y el cierre de los endpoints de organizacion: el front
+ * tiene un solo formato de 403 por rol que reconocer.
+ */
+export const SIN_PERMISO = "El rol no tiene permiso para esta accion";
+
+/**
  * Restringe una ruta a uno o mas roles.
  *
  *   router.get("/auditoria", requireAuth, requireRole("propietario"), ctrl.listar)
@@ -64,9 +71,7 @@ export function requireRole(...rolesPermitidos) {
     }
 
     if (!rolesPermitidos.includes(req.rol)) {
-      return res
-        .status(403)
-        .json({ error: "El rol no tiene acceso a este recurso" });
+      return res.status(403).json({ error: SIN_PERMISO });
     }
 
     return next();
@@ -102,11 +107,58 @@ export function requirePermission(permisos) {
     }
 
     if (!rol.authorize(permisos).success) {
-      return res
-        .status(403)
-        .json({ error: "El rol no tiene permiso para esta accion" });
+      return res.status(403).json({ error: SIN_PERMISO });
     }
 
     return next();
   };
+}
+
+/**
+ * Cierra los endpoints del plugin de organizacion de Better Auth
+ * (`/api/auth/organization/*`).
+ *
+ * El plugin los publica solo por estar configurado, y no pasan por
+ * `requirePermission`. Varios solo verifican que el usuario sea miembro:
+ * `list-members`, `get-full-organization` y `list-invitations` le mostraban
+ * a un empleado la lista del equipo con correos, que `GET /api/miembros` le
+ * niega (HU-4). Los que si chequean rol lo hacen con la matriz heredada del
+ * plugin, y ademas saltean los flujos propios de HU-4.
+ *
+ * Nadie los necesita por HTTP: el Frontend solo usa login, registro, logout y
+ * recuperacion, y el equipo se administra por `/api/miembros`. El backend los
+ * sigue pudiendo usar en proceso con `auth.api.*`, que no pasa por aca.
+ *
+ * Se monta en `/api/auth`, pero compara contra la URL COMPLETA
+ * (`req.originalUrl`) resuelta igual que la resuelve Better Auth, con
+ * `new URL`. No alcanza con `req.path`: es relativo al montaje, y
+ * `/api/auth/../auth/organization/...` le llega como `/../auth/organization`,
+ * que no empieza con `organization`, mientras Better Auth resuelve la URL
+ * entera y sirve el endpoint igual. Tampoco `//`, `%2F`, `%2e%2e` ni las
+ * mayusculas tienen que poder esquivarlo.
+ */
+export function bloquearOrganizacionDirecta(req, res, next) {
+  let segmentos;
+
+  try {
+    const [camino] = req.originalUrl.split("?");
+    const decodificado = decodeURIComponent(camino).replace(/\\/g, "/");
+    // Concatenado y no como URL relativa: un path que empieza con `//` se
+    // leeria como un host.
+    segmentos = new URL(`http://x${decodificado}`).pathname
+      .toLowerCase()
+      .split("/")
+      .filter(Boolean);
+  } catch {
+    // Un escape roto no es un pedido legitimo a ningun endpoint.
+    return res.status(400).json({ error: "Ruta invalida" });
+  }
+
+  const [api, base, recurso] = segmentos;
+
+  if (api === "api" && base === "auth" && recurso === "organization") {
+    return res.status(403).json({ error: SIN_PERMISO });
+  }
+
+  return next();
 }

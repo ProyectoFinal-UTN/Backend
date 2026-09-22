@@ -101,10 +101,19 @@ router.use(requireAuth);
  *                           nombre: { type: string }
  *                       usuario:
  *                         type: object
+ *                         description: >
+ *                           Quién registró el movimiento. El `correo` solo
+ *                           viene para los roles que pueden ver el equipo
+ *                           (`member: ["read"]`, hoy propietario y gerente):
+ *                           un empleado ve el nombre de sus compañeros, no sus
+ *                           correos (HU-32).
  *                         properties:
  *                           id: { type: string }
  *                           nombre: { type: string }
- *                           correo: { type: string }
+ *                           correo:
+ *                             type: string
+ *                             description: >
+ *                               Solo con `member: ["read"]`.
  *                 paginacion:
  *                   type: object
  *                   properties:

@@ -3,6 +3,7 @@ import {
   ROLES,
   empleado,
   gerente,
+  permisosDe,
   propietario,
   puede,
 } from "../src/lib/permissions.js";
@@ -27,6 +28,69 @@ describe("puede", () => {
     expect(puede("intruso", { producto: ["read"] })).toBe(false);
     expect(puede(undefined, { producto: ["read"] })).toBe(false);
     expect(puede(null, { producto: ["read"] })).toBe(false);
+  });
+});
+
+describe("permisosDe", () => {
+  test("lista los permisos efectivos del rol, sin los recursos vacios", () => {
+    expect(permisosDe("empleado")).toEqual({
+      comercio: ["read"],
+      producto: ["read"],
+      ubicacion: ["read"],
+      proveedor: ["read"],
+      movimiento: ["create", "read"],
+      transferencia: ["create"],
+      alerta: ["read"],
+      cuenta: ["read", "delete"],
+    });
+  });
+
+  test("no le cuenta a un rol lo que pueden los demas", () => {
+    const delEmpleado = permisosDe("empleado");
+
+    // Son los permisos del propietario, y el empleado no tiene por que
+    // enterarse de que existen.
+    expect(delEmpleado).not.toHaveProperty("auditoria");
+    expect(delEmpleado).not.toHaveProperty("member");
+    expect(delEmpleado).not.toHaveProperty("invitation");
+    expect(delEmpleado.producto).not.toContain("create");
+
+    expect(permisosDe("gerente")).not.toHaveProperty("auditoria");
+    expect(permisosDe("propietario").auditoria).toEqual(["read"]);
+  });
+
+  test("ningun rol expone recursos vacios ni los del plugin", () => {
+    for (const nombre of Object.values(ROLES)) {
+      const permisos = permisosDe(nombre);
+
+      for (const [recurso, acciones] of Object.entries(permisos)) {
+        expect(acciones.length).toBeGreaterThan(0);
+        expect(["organization", "team", "ac"]).not.toContain(recurso);
+      }
+    }
+  });
+
+  test("lo que informa coincide con lo que autoriza la matriz", () => {
+    for (const nombre of Object.values(ROLES)) {
+      for (const [recurso, acciones] of Object.entries(permisosDe(nombre))) {
+        for (const accion of acciones) {
+          expect(puede(nombre, { [recurso]: [accion] })).toBe(true);
+        }
+      }
+    }
+  });
+
+  test("un rol desconocido o ausente no tiene ninguno", () => {
+    expect(permisosDe("intruso")).toEqual({});
+    expect(permisosDe(undefined)).toEqual({});
+    expect(permisosDe(null)).toEqual({});
+  });
+
+  test("modificar lo devuelto no toca la matriz", () => {
+    permisosDe("empleado").producto.push("delete");
+
+    expect(permisosDe("empleado").producto).toEqual(["read"]);
+    expect(puede("empleado", { producto: ["delete"] })).toBe(false);
   });
 });
 

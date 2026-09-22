@@ -17,6 +17,13 @@ router.use(requireAuth);
  *     description: >
  *       Devuelve la moneda y las ubicaciones de stock del comercio de la
  *       sesión, para que el resto de los módulos los lean de un solo lugar.
+ *
+ *
+ *       Incluye además el `rol` de quien pregunta y sus `permisos` efectivos
+ *       (HU-32), para que la pantalla esconda los controles que ese rol no
+ *       puede usar sin mantener su propia copia de la matriz de permisos.
+ *       **Es solo presentación**: el control real lo hace el backend en cada
+ *       endpoint, que responde 403 a quien igual intente la operación.
  *     tags: [Configuración]
  *     responses:
  *       200:
@@ -28,6 +35,28 @@ router.use(requireAuth);
  *               properties:
  *                 nombre: { type: string }
  *                 moneda: { type: string, example: ARS }
+ *                 rol:
+ *                   type: string
+ *                   enum: [propietario, gerente, empleado]
+ *                 permisos:
+ *                   type: object
+ *                   description: >
+ *                     Los permisos del rol de la sesión, y solo esos: un
+ *                     empleado no recibe los de un propietario. Se listan
+ *                     únicamente los recursos sobre los que el rol tiene
+ *                     alguna acción.
+ *                   additionalProperties:
+ *                     type: array
+ *                     items: { type: string }
+ *                   example:
+ *                     comercio: [read]
+ *                     producto: [read]
+ *                     ubicacion: [read]
+ *                     proveedor: [read]
+ *                     movimiento: [create, read]
+ *                     transferencia: [create]
+ *                     alerta: [read]
+ *                     cuenta: [read, delete]
  *                 ubicaciones:
  *                   type: array
  *                   items:

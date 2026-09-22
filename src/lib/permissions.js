@@ -137,6 +137,48 @@ export function puede(rol, permisos) {
   return roles[rol]?.authorize(permisos).success === true;
 }
 
+/**
+ * Recursos del plugin de organización que no significan nada para el
+ * Frontend. Hoy están en `[]` para los tres roles, así que el filtro de listas
+ * vacías ya los sacaría; la lista explícita evita que se filtren a la API si
+ * alguna vez vuelven a tener valor.
+ */
+const SOLO_DEL_PLUGIN = ["organization", "team", "ac"];
+
+/**
+ * Los permisos efectivos de un rol, para que el Frontend esconda lo que ese
+ * rol no puede usar (HU-32, SCRUM-108) sin mantener su propia copia de la
+ * matriz.
+ *
+ *   permisosDe("empleado") -> { producto: ["read"], movimiento: [...], ... }
+ *
+ * Devuelve solo los del rol que pregunta: un empleado no tiene por qué saber
+ * qué puede hacer un propietario. Los recursos sin ninguna acción se omiten,
+ * porque no son un permiso sino la ausencia de uno. Un rol desconocido no
+ * tiene ninguno, igual que en `puede`.
+ *
+ * Es presentación: la autoridad sigue siendo `requirePermission` en cada
+ * endpoint.
+ */
+export function permisosDe(rol) {
+  const statements = roles[rol]?.statements;
+
+  if (!statements) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(statements)
+      .filter(
+        ([recurso, acciones]) =>
+          acciones.length > 0 && !SOLO_DEL_PLUGIN.includes(recurso),
+      )
+      // Copia de cada lista: la matriz es estado compartido del proceso y
+      // quien reciba esto no tiene que poder modificarla sin querer.
+      .map(([recurso, acciones]) => [recurso, [...acciones]]),
+  );
+}
+
 /** Los tres roles de RF9, para validar contra ellos sin repetir strings. */
 export const ROLES = Object.freeze({
   PROPIETARIO: "propietario",

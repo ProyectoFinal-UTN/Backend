@@ -11,6 +11,7 @@ import {
   organization,
   user,
 } from "../src/db/schema.js";
+import { permisosDe } from "../src/lib/permissions.js";
 import { SIN_PERMISO } from "../src/middlewares/auth.middleware.js";
 import auditoriaRoutes from "../src/routes/auditoria.routes.js";
 import comerciosRoutes from "../src/routes/comercios.routes.js";
@@ -513,6 +514,61 @@ describe("Historial de movimientos: el correo de quien registro", () => {
 
     expect(correos).toContain(sesiones[G].email);
     expect(correos).toContain(sesiones[E].email);
+  });
+});
+
+describe("GET /api/configuracion informa los permisos del rol", () => {
+  async function configuracionDe(rol) {
+    const respuesta = await request(app)
+      .get("/api/configuracion")
+      .set("Cookie", sesiones[rol].cookie);
+
+    expect(respuesta.status).toBe(200);
+    return respuesta.body;
+  }
+
+  test.each([P, G, E])("%s recibe los suyos y solo los suyos", async (rol) => {
+    const configuracion = await configuracionDe(rol);
+
+    expect(configuracion.permisos).toEqual(permisosDe(rol));
+  });
+
+  test("sigue trayendo lo de antes (HU-8, HU-4)", async () => {
+    const configuracion = await configuracionDe(P);
+
+    expect(configuracion).toMatchObject({
+      nombre: expect.any(String),
+      moneda: expect.any(String),
+      rol: P,
+    });
+    expect(Array.isArray(configuracion.ubicaciones)).toBe(true);
+  });
+
+  test("al empleado no le cuenta lo que pueden los demas", async () => {
+    const { permisos } = await configuracionDe(E);
+
+    expect(permisos).not.toHaveProperty("auditoria");
+    expect(permisos).not.toHaveProperty("member");
+    expect(permisos.producto).toEqual(["read"]);
+  });
+
+  test("lo que informa coincide con lo que deja hacer la API", async () => {
+    const { permisos } = await configuracionDe(E);
+
+    // Dice que no puede crear productos...
+    expect(permisos.producto).not.toContain("create");
+
+    // ...y efectivamente no puede.
+    const intento = await pedir("POST", "/api/productos", sesiones[E].cookie);
+
+    expect(intento.status).toBe(403);
+
+    // Lo que si dice que puede, la puerta lo deja pasar.
+    expect(permisos.movimiento).toContain("read");
+
+    const permitido = await pedir("GET", "/api/movimientos", sesiones[E].cookie);
+
+    expect(permitido.status).toBe(200);
   });
 });
 

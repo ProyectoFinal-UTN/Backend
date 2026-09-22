@@ -14,6 +14,14 @@ import {
  * módulo nuevo, sumar acá su recurso y repartirlo entre los tres roles: es el
  * único lugar donde se decide, y las rutas lo consultan con
  * `requirePermission` sin saber de roles.
+ *
+ * Los `...xxxAc.statements` de cada rol existen solo para el plugin de
+ * organización, y traen permisos que este proyecto no usa (`organization`,
+ * `team`, `ac`). Se pisan con `[]` a propósito (HU-32): los endpoints del
+ * plugin están cerrados en `app.js`, pero si algún día se reabren, un rol no
+ * tiene que heredar por defecto algo que la matriz nunca le dio. Por ejemplo,
+ * `adminAc` le daba al gerente `organization: ["update"]` —renombrar el
+ * comercio— cuando acá no tiene `comercio: ["update"]`.
  */
 export const statements = {
   ...defaultStatements,
@@ -25,8 +33,17 @@ export const statements = {
   ubicacion: ["create", "read", "update", "delete"],
   proveedor: ["create", "read", "update", "delete"],
   movimiento: ["create", "read"],
+  // Separado de `movimiento` (HU-32): mover mercadería entre locales es una
+  // decisión distinta de registrar una venta, y así se puede restringir sin
+  // tocar movimientos. La lectura sigue por `movimiento: ["read"]`, porque las
+  // dos patas de una transferencia son movimientos del historial (HU-14).
+  transferencia: ["create"],
   alerta: ["read", "update"],
   auditoria: ["read"],
+  // Los datos de la propia persona (HU-31): descargarlos y darse de baja. Los
+  // tienen los tres roles, pero pasan por la matriz igual que el resto para que
+  // "todo endpoint valida el rol" (HU-32) no tenga excepciones que recordar.
+  cuenta: ["read", "delete"],
 };
 
 export const ac = createAccessControl(statements);
@@ -40,14 +57,22 @@ export const ac = createAccessControl(statements);
  */
 export const propietario = ac.newRole({
   ...ownerAc.statements,
+  // `ownerAc` trae `organization: ["update", "delete"]`. Los datos del
+  // comercio se editan por `PUT /api/comercio`, y borrar la organización
+  // dejaría al comercio huérfano y a todo el equipo con 403.
+  organization: [],
+  team: [],
+  ac: [],
   member: ["create", "read", "update", "delete"],
   comercio: ["read", "update"],
   producto: ["create", "read", "update", "delete"],
   ubicacion: ["create", "read", "update", "delete"],
   proveedor: ["create", "read", "update", "delete"],
   movimiento: ["create", "read"],
+  transferencia: ["create"],
   alerta: ["read", "update"],
   auditoria: ["read"],
+  cuenta: ["read", "delete"],
 });
 
 /**
@@ -59,6 +84,9 @@ export const propietario = ac.newRole({
  */
 export const gerente = ac.newRole({
   ...adminAc.statements,
+  organization: [],
+  team: [],
+  ac: [],
   member: ["read"],
   invitation: [],
   comercio: ["read"],
@@ -66,8 +94,10 @@ export const gerente = ac.newRole({
   ubicacion: ["create", "read", "update", "delete"],
   proveedor: ["create", "read", "update", "delete"],
   movimiento: ["create", "read"],
+  transferencia: ["create"],
   alerta: ["read", "update"],
   auditoria: [],
+  cuenta: ["read", "delete"],
 });
 
 /**
@@ -78,6 +108,7 @@ export const gerente = ac.newRole({
  */
 export const empleado = ac.newRole({
   ...memberAc.statements,
+  ac: [],
   member: [],
   invitation: [],
   comercio: ["read"],
@@ -85,11 +116,26 @@ export const empleado = ac.newRole({
   ubicacion: ["read"],
   proveedor: ["read"],
   movimiento: ["create", "read"],
+  transferencia: ["create"],
   alerta: ["read"],
   auditoria: [],
+  cuenta: ["read", "delete"],
 });
 
 export const roles = { propietario, gerente, empleado };
+
+/**
+ * Si un rol tiene ciertos permisos, para recortar datos en un service.
+ *
+ *   puede(rol, { member: ["read"] })
+ *
+ * Es para cuando el endpoint se puede llamar pero la respuesta cambia según
+ * el rol (HU-32): para bloquear el endpoint entero se usa `requirePermission`
+ * en la ruta. Un rol desconocido no puede nada.
+ */
+export function puede(rol, permisos) {
+  return roles[rol]?.authorize(permisos).success === true;
+}
 
 /** Los tres roles de RF9, para validar contra ellos sin repetir strings. */
 export const ROLES = Object.freeze({

@@ -11,7 +11,11 @@ import * as movimientosService from "../services/movimientos.service.js";
 export async function listar(req, res, next) {
   try {
     res.json(
-      await movimientosService.listarMovimientos(req.comercioId, req.query),
+      await movimientosService.listarMovimientos(
+        req.comercioId,
+        req.query,
+        req.rol,
+      ),
     );
   } catch (error) {
     next(error);

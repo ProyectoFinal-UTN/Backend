@@ -79,7 +79,9 @@ router.use(requireAuth);
  *       401:
  *         description: No hay sesión activa
  *       403:
- *         description: El rol no puede registrar movimientos
+ *         description: >
+ *           El rol no tiene el permiso `transferencia: ["create"]` (hoy lo
+ *           tienen los tres roles)
  *       404:
  *         description: >
  *           El producto o alguna de las ubicaciones no existen en este comercio
@@ -91,12 +93,11 @@ router.use(requireAuth);
  */
 router.post(
   "/",
-  // El permiso es `movimiento: ["create"]` y no uno propio: una transferencia
-  // es justamente eso, dos movimientos, y quien puede registrar uno puede
-  // moverlo de lugar. Sumar un recurso `transferencia` a la matriz de
-  // src/lib/permissions.js daría una fila más para mantener sin ninguna
-  // decisión distinta detrás.
-  requirePermission({ movimiento: ["create"] }),
+  // Permiso propio desde HU-32, aunque hoy lo tengan los mismos tres roles que
+  // `movimiento: ["create"]`. Vaciar un depósito hacia otro local no es lo
+  // mismo que registrar una venta, y el día que se quiera restringir alcanza
+  // con cambiar la matriz de src/lib/permissions.js sin tocar movimientos.
+  requirePermission({ transferencia: ["create"] }),
   controller.transferir,
 );
 

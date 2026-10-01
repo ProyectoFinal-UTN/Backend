@@ -655,8 +655,9 @@ describe("Concurrencia", () => {
 });
 
 describe("Restricciones por rol", () => {
-  // Los tres roles tienen `movimiento: ["create"]`, asi que no hay ningun rol
-  // que deba recibir 403 acá: no es un caso que falte, es que no existe.
+  // Los tres roles tienen `transferencia: ["create"]` (HU-32), asi que no hay
+  // ningun rol que deba recibir 403 acá: no es un caso que falte, es que no
+  // existe. La matriz completa por rol esta en controlAcceso.test.js.
   test("un empleado puede transferir", async () => {
     const empleado = await registrarComercio("empleado");
     const origen = await crearUbicacion(empleado.cookie, "Depósito");

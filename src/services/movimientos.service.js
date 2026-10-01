@@ -9,6 +9,7 @@ import {
   user,
 } from "../db/schema.js";
 import { ErrorDeNegocio, esUuid } from "../lib/errores.js";
+import { puede } from "../lib/permissions.js";
 
 /**
  * Logica de negocio del registro de movimientos de stock (HU-13).
@@ -556,9 +557,16 @@ export function validarFiltrosHistorial(query = {}) {
  *
  * El proveedor sale como id: la tabla PROVEEDOR llega con HU-19. Cuando exista,
  * se suma el join para devolver tambien el nombre.
+ *
+ * El correo de quien registro cada movimiento solo sale para los roles que
+ * pueden ver el equipo (`member: ["read"]`). Un empleado no ve la lista del
+ * equipo (HU-4), y el historial no puede ser la puerta de atras para juntar
+ * los correos de todos (HU-32). El nombre si sale: sin el, el historial no
+ * dice quien hizo que. Sin `rol`, no hay correos: el recorte es el default.
  */
-export async function listarMovimientos(comercioId, query = {}) {
+export async function listarMovimientos(comercioId, query = {}, rol = null) {
   const filtros = validarFiltrosHistorial(query);
+  const verCorreos = puede(rol, { member: ["read"] });
 
   const condiciones = [eq(movimiento.comercioId, comercioId)];
 
@@ -602,7 +610,8 @@ export async function listarMovimientos(comercioId, query = {}) {
         ubicacionNombre: ubicacion.nombre,
         usuarioId: user.id,
         usuarioNombre: user.name,
-        usuarioCorreo: user.email,
+        // Ni se lee si no se va a devolver.
+        ...(verCorreos ? { usuarioCorreo: user.email } : {}),
       })
       .from(movimiento)
       // inner joins: las tres FK son NOT NULL con `restrict`, asi que toda
@@ -639,7 +648,7 @@ export async function listarMovimientos(comercioId, query = {}) {
       usuario: {
         id: fila.usuarioId,
         nombre: fila.usuarioNombre,
-        correo: fila.usuarioCorreo,
+        ...(verCorreos ? { correo: fila.usuarioCorreo } : {}),
       },
     })),
     paginacion: {

@@ -1,6 +1,6 @@
 ---
 name: reglas-desarrollo-pyme
-description: 'Reglas y convenciones de desarrollo del proyecto final "Centralización y Optimización de la Gestión Comercial mediante Asistencia Inteligente" (SaaS de gestión de stock para comercios). Cúbrela SIEMPRE que se escriba, revise o refactorice código en los repos Frontend, Backend o Infraestructura del equipo, incluyendo: crear una pantalla o endpoint, agregar un módulo/Épica, tocar el schema de la base, nombrar una branch o un commit, abrir un Pull Request, o modelar cualquier tabla. Úsala también cuando alguien pregunte "cómo hago X en este proyecto", "dónde va este archivo", "cómo nombro esta rama", o cualquier duda sobre la estructura de carpetas, el flujo de Git, o el modelo de datos. El objetivo es que los tres integrantes trabajen bajo las mismas reglas y no haya conflictos al mergear.'
+description: 'Reglas y convenciones de desarrollo del proyecto final "Centralización y Optimización de la Gestión Comercial mediante Asistencia Inteligente" (SaaS de gestión de stock para comercios). Cúbrela SIEMPRE que se escriba, revise o refactorice código en los repos Frontend, Backend o Infraestructura del equipo, incluyendo: crear una pantalla o endpoint, agregar un módulo/Épica, tocar el schema de la base, nombrar una branch o un commit, abrir un Pull Request, o modelar cualquier tabla. Úsala también cuando alguien pregunte "cómo hago X en este proyecto", "dónde va este archivo", "cómo nombro esta rama", o cualquier duda sobre la estructura de carpetas, el flujo de Git, o el modelo de datos. Cúbrela SIEMPRE también al trabajar en el Asistente Inteligente (E5: HU-26, HU-27, HU-28): llamar al LLM, usar el AI SDK o el AI Gateway de Vercel, elegir o cambiar el modelo de IA, probar consultas o prompts, o cualquier cosa que gaste créditos de IA o toque la facturación de Vercel. El objetivo es que los tres integrantes trabajen bajo las mismas reglas y no haya conflictos al mergear.'
 ---
 
 # Reglas de desarrollo — Gestión Comercial PyME
@@ -26,6 +26,7 @@ Estas valen en los tres repos. El resto de la skill las desarrolla, pero si te l
 4. **El backend filtra siempre por `comercio_id`** (multi-tenant) y **valida el rol en un middleware, nunca a mano dentro del controller.** Ver [references/data-model.md](references/data-model.md) y la sección de auth.
 5. **Commits descriptivos**, que digan qué se hizo — no "cambios", "arreglos", "wip".
 6. **Docker es solo para integración local.** Producción es Backend en Render + Frontend en Vercel, cada uno independiente. No asumas Nginx en producción.
+7. **El crédito de IA es uno solo para los tres: US$ 5 por mes.** Solo se usan los modelos de `MODELOS_PERMITIDOS` (`Backend/src/lib/llm.js`), ningún test llama al LLM real, y **nadie —ni persona ni agente de IA— toca la facturación de Vercel**: no se compran créditos, no se prende auto top-up, no se sube a Pro. Ver [references/asistente-llm.md](references/asistente-llm.md).
 
 ## Cómo elegir qué leer
 
@@ -34,6 +35,7 @@ Estas valen en los tres repos. El resto de la skill las desarrolla, pero si te l
 - Vas a trabajar en **el Frontend** (pantalla, componente, llamada a la API, estilos) → leé [references/frontend.md](references/frontend.md).
 - Vas a **nombrar una branch, hacer un commit, abrir un PR, o promover a `main`** → leé [references/git-workflow.md](references/git-workflow.md).
 - Vas a tocar **Docker, Nginx, o levantar el stack completo** → leé [references/infra.md](references/infra.md).
+- Vas a trabajar en **el Asistente Inteligente** (HU-26/27/28), **llamar al LLM, cambiar el modelo, o probar el asistente** → leé [references/asistente-llm.md](references/asistente-llm.md) **antes de escribir o correr nada**. Cada consulta gasta crédito compartido.
 
 No hace falta leer todo siempre. Abrí el archivo que corresponde a lo que estás por hacer. Si estás por crear un módulo completo (endpoint + pantalla), vas a necesitar backend.md, frontend.md y data-model.md.
 

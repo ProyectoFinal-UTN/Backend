@@ -44,6 +44,10 @@ export const statements = {
   // tienen los tres roles, pero pasan por la matriz igual que el resto para que
   // "todo endpoint valida el rol" (HU-32) no tenga excepciones que recordar.
   cuenta: ["read", "delete"],
+  // El asistente (E5) no tiene tabla propia: consulta lo mismo que las
+  // pantallas. Aun así lleva su permiso, y no reusa `producto:read`, para poder
+  // apagarlo para un rol sin dejarlo ciego en el resto del sistema.
+  asistente: ["consultar"],
 };
 
 export const ac = createAccessControl(statements);
@@ -73,6 +77,7 @@ export const propietario = ac.newRole({
   alerta: ["read", "update"],
   auditoria: ["read"],
   cuenta: ["read", "delete"],
+  asistente: ["consultar"],
 });
 
 /**
@@ -98,6 +103,7 @@ export const gerente = ac.newRole({
   alerta: ["read", "update"],
   auditoria: [],
   cuenta: ["read", "delete"],
+  asistente: ["consultar"],
 });
 
 /**
@@ -120,6 +126,7 @@ export const empleado = ac.newRole({
   alerta: ["read"],
   auditoria: [],
   cuenta: ["read", "delete"],
+  asistente: ["consultar"],
 });
 
 export const roles = { propietario, gerente, empleado };

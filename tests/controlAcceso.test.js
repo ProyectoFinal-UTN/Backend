@@ -13,6 +13,7 @@ import {
 } from "../src/db/schema.js";
 import { permisosDe } from "../src/lib/permissions.js";
 import { SIN_PERMISO } from "../src/middlewares/auth.middleware.js";
+import asistenteRoutes from "../src/routes/asistente.routes.js";
 import auditoriaRoutes from "../src/routes/auditoria.routes.js";
 import comerciosRoutes from "../src/routes/comercios.routes.js";
 import configuracionRoutes from "../src/routes/configuracion.routes.js";
@@ -79,6 +80,10 @@ const MATRIZ = [
   ["GET", "/api/movimientos", [P, G, E]],
   ["POST", "/api/movimientos", [P, G, E]],
   ["POST", "/api/transferencias", [P, G, E]],
+  // HU-26. La matriz manda el cuerpo vacio: la pregunta se valida antes de
+  // hablar con el modelo y corta en 400, asi que este test prueba la puerta
+  // sin llamar nunca al LLM ni gastar el credito compartido del Gateway.
+  ["POST", "/api/asistente/consultas", [P, G, E]],
   ["GET", "/api/mis-datos", [P, G, E]],
 ];
 
@@ -109,6 +114,7 @@ const MONTAJES = new Map([
   [productosRoutes, "/api/productos"],
   [movimientosRoutes, "/api/movimientos"],
   [transferenciasRoutes, "/api/transferencias"],
+  [asistenteRoutes, "/api/asistente"],
 ]);
 
 /**

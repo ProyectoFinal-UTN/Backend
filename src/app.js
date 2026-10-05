@@ -9,6 +9,7 @@ import { auth } from "./lib/auth.js";
 import { auditarCambios } from "./middlewares/auditoria.middleware.js";
 import { bloquearOrganizacionDirecta } from "./middlewares/auth.middleware.js";
 import comerciosRoutes from "./routes/comercios.routes.js";
+import asistenteRoutes from "./routes/asistente.routes.js";
 import auditoriaRoutes from "./routes/auditoria.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
 import datosPersonalesRoutes from "./routes/datosPersonales.routes.js";
@@ -309,6 +310,7 @@ app.use("/api/configuracion", configuracionRoutes);
 app.use("/api/productos", productosRoutes);
 app.use("/api/movimientos", movimientosRoutes);
 app.use("/api/transferencias", transferenciasRoutes);
+app.use("/api/asistente", asistenteRoutes);
 
 // Manejador de errores: cierra la cadena para que un throw en un service no
 // deje la request colgada. Va siempre ultimo.

@@ -42,6 +42,7 @@ describe("permisosDe", () => {
       transferencia: ["create"],
       alerta: ["read"],
       cuenta: ["read", "delete"],
+      asistente: ["consultar"],
     });
   });
 

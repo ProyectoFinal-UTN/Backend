@@ -301,9 +301,11 @@ export async function analizar(comercioId, { dias } = {}) {
   // HU-26 y HU-28, donde el usuario pregunto explicitamente "¿que me falta?" y
   // la respuesta completa es la correcta. Lo que no corresponde es empujarlo
   // sin que nadie lo pida, que es lo que hace esta HU.
-  const paraReponer = candidatosAReponer
-    .filter((fila) => fila.umbralMinimo > 0)
-    .slice(0, LIMITE_POR_TIPO);
+  const bajoElUmbral = candidatosAReponer.filter(
+    (fila) => fila.umbralMinimo > 0,
+  );
+
+  const paraReponer = bajoElUmbral.slice(0, LIMITE_POR_TIPO);
 
   const recomendaciones = paraReponer.map(recomendacionDeReposicion);
   const minimas = ventasMinimas();
@@ -319,7 +321,16 @@ export async function analizar(comercioId, { dias } = {}) {
   // a la vez es informacion util —el umbral puede estar alto para como se
   // vende ese producto— pero eso es un tipo de recomendacion propio, no dos
   // contradictorias.)
-  const yaRecomendados = new Set(paraReponer.map((fila) => fila.id));
+  //
+  // El Set se arma con TODOS los que estan bajo el umbral, no solo con los
+  // cinco que se muestran. Si se armara con los cinco, el sexto quedaria libre
+  // para salir como baja rotacion diciendo "no reponer por ahora" aunque este
+  // por debajo del minimo que la persona configuro: la misma contradiccion,
+  // apareciendo solo cuando hay mas de cinco para reponer.
+  //
+  // Los de umbral 0 no van al Set a proposito: ahi no hay minimo configurado,
+  // asi que "no se esta vendiendo" no contradice nada y es util decirlo.
+  const yaRecomendados = new Set(bajoElUmbral.map((fila) => fila.id));
 
   if (rotacion.ventasDelComercio < minimas) {
     // La compuerta: sin ventas suficientes no se emite NINGUNA baja rotacion,

@@ -324,6 +324,56 @@ describe("analizar — un producto, una sola recomendación", () => {
     expect(recomendacion.tipo).toBe(TIPOS_DE_RECOMENDACION.REPONER);
   });
 
+  test("el que quedó afuera del corte de 5 tampoco se contradice", async () => {
+    // Con más de 5 bajo el umbral, el sexto no se muestra como reponer. Si el
+    // Set se armara con los 5 visibles, ese sexto saldría como baja rotación
+    // diciendo "no reponer por ahora" estando por debajo de su mínimo.
+    const sexto = "66666666-6666-6666-6666-666666666666";
+
+    productosParaReponer.mockResolvedValue(
+      Array.from({ length: 6 }, (_, i) =>
+        faltante({
+          id: i === 5 ? sexto : `bajo-${i}`,
+          nombre: `Bajo el umbral ${i}`,
+          umbralMinimo: 10,
+          enStock: 5,
+        }),
+      ),
+    );
+    rotacionDeProductos.mockResolvedValue(
+      rotacion({
+        productos: [quieto({ id: sexto, nombre: "Bajo el umbral 5" })],
+      }),
+    );
+
+    const resultado = await analizar(COMERCIO_ID);
+
+    expect(deTipo(resultado, TIPOS_DE_RECOMENDACION.REPONER)).toHaveLength(5);
+    expect(deTipo(resultado, TIPOS_DE_RECOMENDACION.BAJA_ROTACION)).toEqual([]);
+  });
+
+  test("un producto sin umbral configurado sí puede salir como parado", async () => {
+    // Umbral 0 no se recomienda reponer, pero tampoco hay un mínimo que
+    // contradecir: decir que no se está vendiendo es información útil.
+    const ID_SIN_UMBRAL = "55555555-5555-5555-5555-555555555555";
+
+    productosParaReponer.mockResolvedValue([
+      faltante({ id: ID_SIN_UMBRAL, nombre: "Sin Umbral", umbralMinimo: 0 }),
+    ]);
+    rotacionDeProductos.mockResolvedValue(
+      rotacion({
+        productos: [quieto({ id: ID_SIN_UMBRAL, nombre: "Sin Umbral" })],
+      }),
+    );
+
+    const resultado = await analizar(COMERCIO_ID);
+
+    expect(deTipo(resultado, TIPOS_DE_RECOMENDACION.REPONER)).toEqual([]);
+    expect(deTipo(resultado, TIPOS_DE_RECOMENDACION.BAJA_ROTACION)).toHaveLength(
+      1,
+    );
+  });
+
   test("otro producto parado sí sale, no se descarta de más", async () => {
     rotacionDeProductos.mockResolvedValue(
       rotacion({

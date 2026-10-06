@@ -9,6 +9,10 @@ export default {
   testEnvironment: "node",
   transform: {},
   testMatch: ["**/tests/**/*.test.js"],
+  // Corre antes de cada archivo de test, y por lo tanto antes de que `app.js`
+  // importe `dotenv/config`: deja la key del LLM en vacio para que ningun test
+  // le pueda hablar al proveedor real. Ver el archivo para el por que.
+  setupFiles: ["<rootDir>/tests/jest.setup.js"],
   // Los tests de integracion registran usuarios contra Neon: bcrypt con 12
   // rondas mas la latencia de red no entran en los 5 segundos por defecto.
   testTimeout: 30000,

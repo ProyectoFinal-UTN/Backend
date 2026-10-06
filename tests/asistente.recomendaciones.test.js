@@ -285,6 +285,117 @@ describe("analizar — baja rotación", () => {
   });
 });
 
+describe("analizar — un producto, una sola recomendación", () => {
+  /** El mismo producto bajo el umbral Y sin ventas: los dos criterios aplican. */
+  const ID = "33333333-3333-3333-3333-333333333333";
+
+  beforeEach(() => {
+    productosParaReponer.mockResolvedValue([
+      faltante({ id: ID, nombre: "Yerba Parada", enStock: 5, umbralMinimo: 10 }),
+    ]);
+    rotacionDeProductos.mockResolvedValue(
+      rotacion({
+        productos: [quieto({ id: ID, nombre: "Yerba Parada", enStock: 5 })],
+      }),
+    );
+  });
+
+  test("no se recomienda dos veces el mismo producto", async () => {
+    const { recomendaciones } = await analizar(COMERCIO_ID);
+
+    const delProducto = recomendaciones.filter((una) => una.producto?.id === ID);
+
+    expect(delProducto).toHaveLength(1);
+  });
+
+  test("no se dice a la vez «reponer» y «no reponer por ahora»", async () => {
+    // Era el síntoma real: las dos recomendaciones salían una al lado de la
+    // otra, con consejos opuestos para el mismo producto.
+    const { recomendaciones } = await analizar(COMERCIO_ID);
+    const textos = recomendaciones.map((una) => una.texto).join(" ");
+
+    expect(textos).toContain("Es buen momento para reponer");
+    expect(textos).not.toContain("no reponer por ahora");
+  });
+
+  test("gana la reposición, porque el umbral lo fijó la persona", async () => {
+    const [recomendacion] = (await analizar(COMERCIO_ID)).recomendaciones;
+
+    expect(recomendacion.tipo).toBe(TIPOS_DE_RECOMENDACION.REPONER);
+  });
+
+  test("otro producto parado sí sale, no se descarta de más", async () => {
+    rotacionDeProductos.mockResolvedValue(
+      rotacion({
+        productos: [
+          quieto({ id: ID, nombre: "Yerba Parada", enStock: 5 }),
+          quieto({ id: "44444444-4444-4444-4444-444444444444", nombre: "Otro" }),
+        ],
+      }),
+    );
+
+    const quietos = deTipo(
+      await analizar(COMERCIO_ID),
+      TIPOS_DE_RECOMENDACION.BAJA_ROTACION,
+    );
+
+    expect(quietos.map((una) => una.producto.nombre)).toEqual(["Otro"]);
+  });
+});
+
+describe("analizar — umbral mínimo en cero", () => {
+  test("un producto sin umbral configurado no se recomienda reponer", async () => {
+    // 0 es el default del schema (HU-9) y lo que la importación de HU-7 escribe
+    // con la celda vacía: no es un umbral bajo, es la ausencia de uno. Salía
+    // como "el mínimo que fijaste es 0 unidades, así que convendría hacer un
+    // pedido", empujado sin que nadie lo pida.
+    productosParaReponer.mockResolvedValue([
+      faltante({ nombre: "Sin Umbral", enStock: 0, umbralMinimo: 0 }),
+    ]);
+
+    const resultado = await analizar(COMERCIO_ID);
+
+    expect(deTipo(resultado, TIPOS_DE_RECOMENDACION.REPONER)).toEqual([]);
+  });
+
+  test("con umbral 1 sí se recomienda: es un umbral de verdad", async () => {
+    productosParaReponer.mockResolvedValue([
+      faltante({ nombre: "Con Umbral", enStock: 0, umbralMinimo: 1 }),
+    ]);
+
+    const resultado = await analizar(COMERCIO_ID);
+
+    expect(deTipo(resultado, TIPOS_DE_RECOMENDACION.REPONER)).toHaveLength(1);
+  });
+
+  test("los de umbral 0 no le ocupan el lugar a los que sí lo tienen", async () => {
+    // Por eso se le piden más candidatos a la consulta de los que se devuelven:
+    // si se pidieran cinco, cinco productos sin umbral taparían a los reales.
+    productosParaReponer.mockResolvedValue([
+      ...Array.from({ length: 6 }, (_, i) =>
+        faltante({ id: `cero-${i}`, nombre: `Sin umbral ${i}`, umbralMinimo: 0 }),
+      ),
+      faltante({ id: "real", nombre: "Harina 000", umbralMinimo: 10 }),
+    ]);
+
+    const reponer = deTipo(
+      await analizar(COMERCIO_ID),
+      TIPOS_DE_RECOMENDACION.REPONER,
+    );
+
+    expect(reponer).toHaveLength(1);
+    expect(reponer[0].producto.nombre).toBe("Harina 000");
+  });
+
+  test("le pide a la consulta más candidatos que los que devuelve", async () => {
+    await analizar(COMERCIO_ID);
+
+    const { limite } = productosParaReponer.mock.calls[0][1];
+
+    expect(limite).toBeGreaterThan(5);
+  });
+});
+
 describe("analizar — compuerta de histórico", () => {
   test("con menos ventas que el mínimo no sale ninguna baja rotación", async () => {
     rotacionDeProductos.mockResolvedValue(
@@ -368,7 +479,7 @@ describe("analizar — multi-tenant", () => {
     await analizar(COMERCIO_ID);
 
     expect(productosParaReponer).toHaveBeenCalledWith(COMERCIO_ID, {
-      limite: 5,
+      limite: expect.any(Number),
     });
     expect(rotacionDeProductos).toHaveBeenCalledWith(COMERCIO_ID, { dias: 30 });
     expect(productosParaReponer).not.toHaveBeenCalledWith(
@@ -509,6 +620,22 @@ describe("recomendar — modo limitado (HU-28)", () => {
     });
 
     expect((await esperarDegradadoCompleto()).modo).toBe("limitado");
+  });
+
+  test("un pedido que no escribió nada igual deja su línea de costo", async () => {
+    // Es el pedido que más interesa ver en la consola: se pagó y no sirvió.
+    // Loguearlo después del `return` lo dejaba invisible.
+    consultarModelo.mockResolvedValue({
+      texto: "",
+      herramientasUsadas: [],
+      uso: USO,
+    });
+
+    await recomendar(COMERCIO_ID);
+
+    expect(avisosDeCosto).toHaveBeenCalledWith(
+      expect.stringContaining("google/gemini-2.5-flash"),
+    );
   });
 
   test("un fallo del proveedor no se propaga como excepción", async () => {

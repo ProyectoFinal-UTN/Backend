@@ -175,10 +175,19 @@ router.post(
  *                   type: string
  *                   enum: [ia, limitado]
  *                   description: >
- *                     `ia` si el `resumen` lo redactó el modelo. `limitado` si
- *                     salió de plantilla, porque el proveedor no estaba
- *                     disponible o porque no había nada que resumir (HU-28).
- *                     Las `recomendaciones` son las mismas en los dos casos.
+ *                     De dónde salió el `resumen`, y nada más: `ia` si lo
+ *                     redactó el modelo, `limitado` si salió de plantilla. Las
+ *                     `recomendaciones` son exactamente las mismas en los dos
+ *                     casos — lo único que cambia es el párrafo de arriba.
+ *
+ *
+ *                     **Atención al mostrarlo:** con `recomendaciones` vacía el
+ *                     `modo` es siempre `limitado`, porque no se le pide un
+ *                     resumen al modelo cuando no hay nada que resumir. Eso
+ *                     **no** es una degradación del servicio y no corresponde
+ *                     mostrar el aviso de "respuesta limitada" que sí
+ *                     corresponde en `/consultas`. Para decidir si avisar,
+ *                     mirar `modo` **junto con** `recomendaciones.length`.
  *                 resumen:
  *                   type: string
  *                   description: Párrafo de presentación. Nunca viene vacío ni nulo.

@@ -142,4 +142,23 @@ describe("Matriz de permisos", () => {
     expect(gerente.authorize({ comercio: ["update"] }).success).toBe(false);
     expect(empleado.authorize({ comercio: ["update"] }).success).toBe(false);
   });
+
+  test("los tres consultan al asistente, pero el empleado no recibe recomendaciones (HU-27)", () => {
+    for (const rol of [propietario, gerente, empleado]) {
+      expect(rol.authorize({ asistente: ["consultar"] }).success).toBe(true);
+    }
+
+    expect(
+      propietario.authorize({ asistente: ["recomendaciones"] }).success,
+    ).toBe(true);
+    expect(gerente.authorize({ asistente: ["recomendaciones"] }).success).toBe(
+      true,
+    );
+    // Es la unica accion del asistente que no tienen los tres. Si alguien le
+    // agrega `recomendaciones` al empleado, este test y la fila de
+    // controlAcceso.test.js tienen que cambiar juntos, a la vista en el PR.
+    expect(empleado.authorize({ asistente: ["recomendaciones"] }).success).toBe(
+      false,
+    );
+  });
 });

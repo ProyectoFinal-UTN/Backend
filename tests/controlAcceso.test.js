@@ -84,6 +84,11 @@ const MATRIZ = [
   // hablar con el modelo y corta en 400, asi que este test prueba la puerta
   // sin llamar nunca al LLM ni gastar el credito compartido del Gateway.
   ["POST", "/api/asistente/consultas", [P, G, E]],
+  // HU-27. El empleado no recibe recomendaciones de gestion, que es la unica
+  // parte del asistente que no tienen los tres roles. Tampoco llama al LLM:
+  // sin ventas cargadas el analisis devuelve `sin_historial` y el modelo no se
+  // consulta, asi que este test no gasta credito.
+  ["GET", "/api/asistente/recomendaciones", [P, G]],
   ["GET", "/api/mis-datos", [P, G, E]],
 ];
 

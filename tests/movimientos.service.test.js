@@ -1,5 +1,8 @@
 import { describe, expect, test } from "@jest/globals";
-import { validarDatosMovimiento } from "../src/services/movimientos.service.js";
+import {
+  validarDatosMovimiento,
+  validarFiltrosHistorial,
+} from "../src/services/movimientos.service.js";
 
 /**
  * Unitario puro de la validacion de HU-13 — no toca la base, igual que
@@ -30,9 +33,10 @@ describe("validarDatosMovimiento — signo según el tipo", () => {
   });
 
   test("una merma resta", () => {
-    expect(validarDatosMovimiento(movimiento({ tipo: "merma" })).cantidad).toBe(
-      -3,
-    );
+    expect(
+      validarDatosMovimiento(movimiento({ tipo: "merma", motivo: "Rotura" }))
+        .cantidad,
+    ).toBe(-3);
   });
 
   test("normaliza el tipo con espacios y mayúsculas", () => {
@@ -45,15 +49,17 @@ describe("validarDatosMovimiento — signo según el tipo", () => {
 describe("validarDatosMovimiento — ajuste", () => {
   test("con sentido entrada suma", () => {
     expect(
-      validarDatosMovimiento(movimiento({ tipo: "ajuste", sentido: "entrada" }))
-        .cantidad,
+      validarDatosMovimiento(
+        movimiento({ tipo: "ajuste", sentido: "entrada", motivo: "Recuento" }),
+      ).cantidad,
     ).toBe(3);
   });
 
   test("con sentido salida resta", () => {
     expect(
-      validarDatosMovimiento(movimiento({ tipo: "ajuste", sentido: "salida" }))
-        .cantidad,
+      validarDatosMovimiento(
+        movimiento({ tipo: "ajuste", sentido: "salida", motivo: "Recuento" }),
+      ).cantidad,
     ).toBe(-3);
   });
 
@@ -76,6 +82,78 @@ describe("validarDatosMovimiento — ajuste", () => {
       validarDatosMovimiento(movimiento({ tipo: "venta", sentido: "entrada" }))
         .cantidad,
     ).toBe(-3);
+  });
+});
+
+describe("validarDatosMovimiento — motivo (HU-15)", () => {
+  test("un ajuste sin motivo se rechaza", () => {
+    expect(() =>
+      validarDatosMovimiento(movimiento({ tipo: "ajuste", sentido: "salida" })),
+    ).toThrow(/motivo/i);
+  });
+
+  test("una merma sin motivo se rechaza", () => {
+    expect(() => validarDatosMovimiento(movimiento({ tipo: "merma" }))).toThrow(
+      /motivo/i,
+    );
+  });
+
+  test("un motivo en blanco no cuenta como motivo", () => {
+    expect(() =>
+      validarDatosMovimiento(movimiento({ tipo: "merma", motivo: "    " })),
+    ).toThrow(/motivo/i);
+  });
+
+  test("un motivo que no es texto se rechaza", () => {
+    // Sin el typeof, un 42 mal serializado entraria como motivo "42" en un
+    // libro que despues no se puede editar.
+    expect(() =>
+      validarDatosMovimiento(movimiento({ tipo: "merma", motivo: 42 })),
+    ).toThrow(/motivo/i);
+  });
+
+  test("recorta los espacios del motivo", () => {
+    expect(
+      validarDatosMovimiento(
+        movimiento({ tipo: "merma", motivo: "  Producto vencido  " }),
+      ).motivo,
+    ).toBe("Producto vencido");
+  });
+
+  test("una compra no necesita motivo y queda en null", () => {
+    expect(validarDatosMovimiento(movimiento({ tipo: "compra" })).motivo).toBe(
+      null,
+    );
+  });
+
+  test("una venta puede llevar motivo igual, y se guarda", () => {
+    expect(
+      validarDatosMovimiento(
+        movimiento({ tipo: "venta", motivo: "Venta mostrador" }),
+      ).motivo,
+    ).toBe("Venta mostrador");
+  });
+
+  test("un motivo vacío en una compra queda en null, no en cadena vacía", () => {
+    expect(
+      validarDatosMovimiento(movimiento({ tipo: "compra", motivo: "   " }))
+        .motivo,
+    ).toBe(null);
+  });
+
+  test("acepta un motivo de exactamente 255 caracteres", () => {
+    const motivo = "a".repeat(255);
+    expect(
+      validarDatosMovimiento(movimiento({ tipo: "merma", motivo })).motivo,
+    ).toBe(motivo);
+  });
+
+  test("rechaza un motivo que no entra en la columna", () => {
+    expect(() =>
+      validarDatosMovimiento(
+        movimiento({ tipo: "merma", motivo: "a".repeat(256) }),
+      ),
+    ).toThrow(/255/);
   });
 });
 
@@ -200,4 +278,170 @@ describe("validarDatosMovimiento — datos que no se aceptan del body", () => {
       validarDatosMovimiento(movimiento({ transferenciaId: PROVEEDOR_ID })),
     ).not.toHaveProperty("transferenciaId");
   });
+});
+
+/* ---------------------------------------------------------------------------
+ * HU-14 — filtros del historial
+ * ------------------------------------------------------------------------- */
+
+describe("validarFiltrosHistorial — sin filtros", () => {
+  test("sin parámetros devuelve la primera página con el límite por defecto", () => {
+    expect(validarFiltrosHistorial({})).toEqual({
+      desde: undefined,
+      hasta: undefined,
+      tipo: undefined,
+      productoId: undefined,
+      proveedorId: undefined,
+      ubicacionId: undefined,
+      pagina: 1,
+      limite: 50,
+    });
+  });
+
+  test("los parámetros vacíos cuentan como no enviados", () => {
+    const filtros = validarFiltrosHistorial({
+      desde: "",
+      tipo: "",
+      productoId: "",
+      pagina: "",
+    });
+
+    expect(filtros.desde).toBeUndefined();
+    expect(filtros.tipo).toBeUndefined();
+    expect(filtros.productoId).toBeUndefined();
+    expect(filtros.pagina).toBe(1);
+  });
+
+  test("ignora un comercioId mezclado en la query string", () => {
+    expect(
+      validarFiltrosHistorial({ comercioId: PRODUCTO_ID }),
+    ).not.toHaveProperty("comercioId");
+  });
+});
+
+describe("validarFiltrosHistorial — rango de fechas", () => {
+  test("acepta instantes ISO con Z y con offset", () => {
+    const filtros = validarFiltrosHistorial({
+      desde: "2026-09-01T00:00:00-03:00",
+      hasta: "2026-09-18T23:59:59.999Z",
+    });
+
+    expect(filtros.desde.toISOString()).toBe("2026-09-01T03:00:00.000Z");
+    expect(filtros.hasta.toISOString()).toBe("2026-09-18T23:59:59.999Z");
+  });
+
+  test("acepta un rango de un solo instante (desde igual a hasta)", () => {
+    const instante = "2026-09-18T12:00:00.000Z";
+
+    expect(() =>
+      validarFiltrosHistorial({ desde: instante, hasta: instante }),
+    ).not.toThrow();
+  });
+
+  test("rechaza una fecha sin zona: el día sería ambiguo", () => {
+    expect(() =>
+      validarFiltrosHistorial({ desde: "2026-09-18T00:00:00" }),
+    ).toThrow(/desde/);
+  });
+
+  test("rechaza una fecha sola, sin hora", () => {
+    expect(() => validarFiltrosHistorial({ hasta: "2026-09-18" })).toThrow(
+      /hasta/,
+    );
+  });
+
+  test("rechaza un texto que no es una fecha", () => {
+    expect(() => validarFiltrosHistorial({ desde: "ayer" })).toThrow(/desde/);
+  });
+
+  test("rechaza una fecha con el formato bien pero imposible", () => {
+    expect(() =>
+      validarFiltrosHistorial({ desde: "2026-13-45T00:00:00Z" }),
+    ).toThrow(/desde/);
+  });
+
+  test("rechaza un parámetro repetido, que Express entrega como array", () => {
+    expect(() =>
+      validarFiltrosHistorial({
+        desde: ["2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"],
+      }),
+    ).toThrow(/desde/);
+  });
+
+  test("rechaza desde posterior a hasta, con status 400", () => {
+    let error;
+    try {
+      validarFiltrosHistorial({
+        desde: "2026-09-18T00:00:00Z",
+        hasta: "2026-09-01T00:00:00Z",
+      });
+    } catch (e) {
+      error = e;
+    }
+
+    expect(error.message).toMatch(/posterior/);
+    expect(error.status).toBe(400);
+  });
+});
+
+describe("validarFiltrosHistorial — tipo", () => {
+  test.each(["compra", "venta", "ajuste", "merma", "transferencia"])(
+    "acepta %s",
+    (tipo) => {
+      expect(validarFiltrosHistorial({ tipo }).tipo).toBe(tipo);
+    },
+  );
+
+  test("normaliza espacios y mayúsculas", () => {
+    expect(validarFiltrosHistorial({ tipo: "  VENTA " }).tipo).toBe("venta");
+  });
+
+  test("rechaza un tipo desconocido", () => {
+    expect(() => validarFiltrosHistorial({ tipo: "regalo" })).toThrow(
+      /tipo de movimiento/i,
+    );
+  });
+});
+
+describe("validarFiltrosHistorial — ids", () => {
+  test("acepta UUIDs de producto, proveedor y ubicación", () => {
+    const filtros = validarFiltrosHistorial({
+      productoId: PRODUCTO_ID,
+      proveedorId: PROVEEDOR_ID,
+      ubicacionId: UBICACION_ID,
+    });
+
+    expect(filtros.productoId).toBe(PRODUCTO_ID);
+    expect(filtros.proveedorId).toBe(PROVEEDOR_ID);
+    expect(filtros.ubicacionId).toBe(UBICACION_ID);
+  });
+
+  test.each(["productoId", "proveedorId", "ubicacionId"])(
+    "rechaza un %s que no es UUID, antes de que llegue a la base",
+    (campo) => {
+      expect(() => validarFiltrosHistorial({ [campo]: "123" })).toThrow(
+        new RegExp(campo),
+      );
+    },
+  );
+});
+
+describe("validarFiltrosHistorial — paginación", () => {
+  test("lee página y límite de la query string", () => {
+    const filtros = validarFiltrosHistorial({ pagina: "3", limite: "20" });
+
+    expect(filtros.pagina).toBe(3);
+    expect(filtros.limite).toBe(20);
+  });
+
+  test("recorta el límite al máximo en vez de rechazarlo", () => {
+    expect(validarFiltrosHistorial({ limite: "5000" }).limite).toBe(200);
+  });
+
+  test.each(["0", "-1", "1.5", "abc", "1e3"])(
+    "rechaza la página %s",
+    (pagina) => {
+      expect(() => validarFiltrosHistorial({ pagina })).toThrow(/pagina/);
+    },
+  );
 });

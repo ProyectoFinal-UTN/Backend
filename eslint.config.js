@@ -31,6 +31,18 @@ export default [
   },
 
   {
+    // Una linea de console.info por consulta al LLM con lo que costo: el
+    // credito del AI Gateway es uno solo para los tres integrantes. Se habilita
+    // solo `info`, no `log`, para que el console.log de debug siga prohibido.
+    // Los dos archivos que le hablan al modelo: HU-26 y HU-27.
+    files: [
+      "src/services/asistente.service.js",
+      "src/services/asistente.recomendaciones.service.js",
+    ],
+    rules: { "no-console": ["warn", { allow: ["info", "warn", "error"] }] },
+  },
+
+  {
     files: ["tests/**/*.test.js", "tests/**/*.js"],
     ...jest.configs["flat/recommended"],
     languageOptions: {

@@ -8,6 +8,20 @@ import * as movimientosService from "../services/movimientos.service.js";
  * de `req`, donde los deja `requireAuth` a partir de la sesion, nunca del body.
  */
 
+export async function listar(req, res, next) {
+  try {
+    res.json(
+      await movimientosService.listarMovimientos(
+        req.comercioId,
+        req.query,
+        req.rol,
+      ),
+    );
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function registrar(req, res, next) {
   try {
     const registrado = await movimientosService.registrarMovimiento(

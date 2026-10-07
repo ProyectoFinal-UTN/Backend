@@ -397,6 +397,7 @@ describe("Stock por ubicación en el detalle (HU-11)", () => {
         tipo: "ajuste",
         cantidad: 6,
         sentido: "entrada",
+        motivo: "Recuento físico",
         ubicacionId: ubicacion.id,
       });
     expect(ajuste.status).toBe(201);

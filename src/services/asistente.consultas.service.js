@@ -6,6 +6,7 @@ import {
   gte,
   ilike,
   inArray,
+  lte,
   or,
   sql,
 } from "drizzle-orm";
@@ -49,6 +50,16 @@ const LIMITE_POR_DEFECTO = 10;
 /** Ventana por defecto y maxima, en dias, de las consultas sobre el libro. */
 const DIAS_POR_DEFECTO = 7;
 const DIAS_MAXIMOS = 90;
+
+/**
+ * Techo de productos que mira el analisis de rotacion (HU-27).
+ *
+ * Mas alto que `LIMITE_MAXIMO` porque esto no es una lista que se le muestre a
+ * nadie: es el universo de candidatos que despues se filtra por "no tuvo
+ * ventas" y se recorta. Igual tiene techo, y con `ORDER BY` determinista, para
+ * que un catalogo grande no traiga la tabla entera a memoria.
+ */
+const CANDIDATOS_MAXIMOS = 200;
 
 /**
  * Tipos que acepta el filtro del libro, tomados del enum de la base.
@@ -303,4 +314,103 @@ export async function resumenDeActividad(comercioId, { dias } = {}) {
     .orderBy(asc(movimiento.tipo));
 
   return { desde, dias: ventana, porTipo };
+}
+
+/**
+ * Rotacion de los productos que tienen existencias (HU-27, RF6).
+ *
+ * Es el insumo del analisis de baja rotacion: por cada producto con stock,
+ * cuantas ventas tuvo en la ventana. Quien decide que es "poca rotacion" es
+ * `asistente.recomendaciones.service.js`; aca solo se miden los hechos.
+ *
+ * Devuelve tambien `ventasDelComercio`, que es el total de ventas de la ventana
+ * y no la suma de las de estos productos: incluye las de productos sin stock o
+ * dados de baja. Es el numero con el que se decide si hay histórico suficiente
+ * para hablar de rotacion, y para eso tiene que contar todo lo que se vendio.
+ *
+ * Son DOS consultas y no una a proposito. Juntar `stock` y `movimiento` en el
+ * mismo `GROUP BY` multiplica las filas —cada saldo por cada movimiento— y
+ * arruina las dos sumas a la vez. El cruce sale mas barato en JS que el
+ * `DISTINCT` o el subselect que haria falta para evitarlo, y se lee mejor.
+ */
+export async function rotacionDeProductos(comercioId, { dias } = {}) {
+  const ventana = acotar(dias, 30, DIAS_MAXIMOS);
+  const desde = new Date(Date.now() - ventana * 24 * 60 * 60 * 1000);
+
+  // Solo los que ya existian cuando empezo la ventana: un producto dado de
+  // alta ayer no tiene poca rotacion, tiene poca historia. Sin este filtro,
+  // cargar el catalogo genera una recomendacion por cada producto nuevo.
+  const candidatos = await db
+    .select({
+      id: producto.id,
+      nombre: producto.nombre,
+      categoria: producto.categoria,
+      unidadMedida: producto.unidadMedida,
+      enStock: TOTAL_EN_STOCK.mapWith(Number),
+    })
+    .from(producto)
+    .leftJoin(
+      stock,
+      and(eq(stock.productoId, producto.id), eq(stock.comercioId, comercioId)),
+    )
+    .where(
+      and(
+        eq(producto.comercioId, comercioId),
+        eq(producto.activo, true),
+        lte(producto.createdAt, desde),
+      ),
+    )
+    .groupBy(
+      producto.id,
+      producto.nombre,
+      producto.categoria,
+      producto.unidadMedida,
+    )
+    // Sin existencias no hay nada que recomendar: lo que no se vende y no se
+    // tiene no inmoviliza plata. Esos casos los cubre `productosParaReponer`.
+    .having(sql`${TOTAL_EN_STOCK} > 0`)
+    .orderBy(sql`${TOTAL_EN_STOCK} desc`, asc(producto.nombre))
+    .limit(CANDIDATOS_MAXIMOS);
+
+  const ventas = await db
+    .select({
+      productoId: movimiento.productoId,
+      ventas: sql`count(*)`.mapWith(Number),
+      // Las ventas se guardan con `cantidad` NEGATIVA (`SIGNO_POR_TIPO` en
+      // movimientos.service.js), asi que las unidades vendidas son la suma
+      // dada vuelta. Un `sum()` sin el menos devuelve unidades negativas y
+      // cualquier umbral que se compare contra eso queda al revés.
+      unidadesVendidas: sql`-coalesce(sum(${movimiento.cantidad}), 0)`.mapWith(
+        Number,
+      ),
+    })
+    .from(movimiento)
+    .where(
+      and(
+        eq(movimiento.comercioId, comercioId),
+        eq(movimiento.tipo, "venta"),
+        gte(movimiento.fecha, desde),
+      ),
+    )
+    .groupBy(movimiento.productoId);
+
+  const porProducto = new Map(ventas.map((fila) => [fila.productoId, fila]));
+
+  return {
+    desde,
+    dias: ventana,
+    ventasDelComercio: ventas.reduce((suma, fila) => suma + fila.ventas, 0),
+    productos: candidatos.map((fila) => {
+      const medido = porProducto.get(fila.id);
+
+      return {
+        ...fila,
+        // El criterio de rotacion se apoya en la CANTIDAD DE VENTAS y no en
+        // las unidades: es inmune al signo, que es la parte del dominio facil
+        // de escribir al revés.
+        ventas: medido?.ventas ?? 0,
+        unidadesVendidas: medido?.unidadesVendidas ?? 0,
+      };
+    }),
+  };
 }

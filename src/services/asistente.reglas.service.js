@@ -187,8 +187,17 @@ export function detectarIntencion(pregunta) {
  * Formato de las respuestas
  * ------------------------------------------------------------------------- */
 
+/*
+ * Los cuatro helpers de redaccion que siguen se exportan porque HU-27
+ * (recomendaciones proactivas) arma su texto con las mismas plantillas: el
+ * objetivo de "comprensible para un usuario sin formacion tecnica" es el mismo
+ * en las dos HU, y duplicar `fechaCorta` —que tiene adentro el laburo de no
+ * depender de la version de ICU— seria pedir que las dos se desincronicen.
+ * Siguen siendo de uso interno del modulo del asistente.
+ */
+
 /** "1 unidad", "3 unidades", "2 kg". */
-function conUnidad(cantidad, unidadMedida) {
+export function conUnidad(cantidad, unidadMedida) {
   if (!unidadMedida || unidadMedida === "unidad") {
     return `${cantidad} ${cantidad === 1 ? "unidad" : "unidades"}`;
   }
@@ -197,11 +206,11 @@ function conUnidad(cantidad, unidadMedida) {
 }
 
 /** "queda 1 unidad", "quedan 3 unidades", "quedan 0 unidades". */
-function queda(cantidad, unidadMedida) {
+export function queda(cantidad, unidadMedida) {
   return `${cantidad === 1 ? "queda" : "quedan"} ${conUnidad(cantidad, unidadMedida)}`;
 }
 
-function periodo(dias) {
+export function periodo(dias) {
   return dias === 1 ? "las últimas 24 horas" : `los últimos ${dias} días`;
 }
 
@@ -234,7 +243,7 @@ function listar(lineas, cierre) {
  * backend corre en Windows en desarrollo y en Linux en Docker y en Render: la
  * misma respuesta no puede depender de dónde corrió.
  */
-function fechaCorta(fecha) {
+export function fechaCorta(fecha) {
   const partes = new Intl.DateTimeFormat("en-US", {
     day: "numeric",
     month: "numeric",

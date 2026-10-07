@@ -84,6 +84,16 @@ const MATRIZ = [
   // hablar con el modelo y corta en 400, asi que este test prueba la puerta
   // sin llamar nunca al LLM ni gastar el credito compartido del Gateway.
   ["POST", "/api/asistente/consultas", [P, G, E]],
+  // HU-27. El empleado no recibe recomendaciones de gestion, que es la unica
+  // parte del asistente que no tienen los tres roles.
+  //
+  // Este caso SI pasa por el service completo: el comercio del escenario no
+  // tiene ventas, el analisis devuelve una recomendacion (`sin_historial`) y
+  // no una lista vacia, y con una recomendacion el service le pediria el
+  // resumen al modelo. Que no lo haga depende de `tests/jest.setup.js`, que
+  // deja la key en vacio para toda la suite. Sin ese candado, esta fila le
+  // gasta credito compartido a cada `npm test`.
+  ["GET", "/api/asistente/recomendaciones", [P, G]],
   ["GET", "/api/mis-datos", [P, G, E]],
 ];
 

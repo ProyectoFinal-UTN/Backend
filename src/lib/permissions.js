@@ -47,7 +47,13 @@ export const statements = {
   // El asistente (E5) no tiene tabla propia: consulta lo mismo que las
   // pantallas. Aun así lleva su permiso, y no reusa `producto:read`, para poder
   // apagarlo para un rol sin dejarlo ciego en el resto del sistema.
-  asistente: ["consultar"],
+  //
+  // `recomendaciones` va separado de `consultar` (HU-27): preguntarle algo al
+  // asistente lo puede hacer cualquiera que opere el sistema, pero recibir
+  // sugerencias sobre cómo gestionar el negocio —qué no está rotando, qué
+  // conviene reponer— es una lectura de gestión, y la historia la escribe el
+  // propietario. Con una sola acción no se podía dar una cosa sin la otra.
+  asistente: ["consultar", "recomendaciones"],
 };
 
 export const ac = createAccessControl(statements);
@@ -77,7 +83,7 @@ export const propietario = ac.newRole({
   alerta: ["read", "update"],
   auditoria: ["read"],
   cuenta: ["read", "delete"],
-  asistente: ["consultar"],
+  asistente: ["consultar", "recomendaciones"],
 });
 
 /**
@@ -103,7 +109,11 @@ export const gerente = ac.newRole({
   alerta: ["read", "update"],
   auditoria: [],
   cuenta: ["read", "delete"],
-  asistente: ["consultar"],
+  // Las recomendaciones de HU-27 sí, aunque la historia diga "como
+  // propietario": decidir qué reponer y qué no se está moviendo es operar el
+  // negocio, que es justo lo que este rol hace. Lo que no tiene es la
+  // auditoría ni la gestión de usuarios, que son administración.
+  asistente: ["consultar", "recomendaciones"],
 });
 
 /**
@@ -126,6 +136,9 @@ export const empleado = ac.newRole({
   alerta: ["read"],
   auditoria: [],
   cuenta: ["read", "delete"],
+  // Puede preguntarle al asistente, pero no recibe las recomendaciones de
+  // gestión de HU-27: son una lectura del negocio, no una herramienta para
+  // atender el mostrador.
   asistente: ["consultar"],
 });
 

@@ -627,7 +627,10 @@ describe("recomendar — modo limitado (HU-28)", () => {
     jest.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  /** Lo que tiene que valer en los cuatro caminos degradados. */
+  /**
+   * Lo que tiene que valer en los caminos degradados de verdad: `limitado` se
+   * reserva para cuando el proveedor no estuvo, y con la lista entera debajo.
+   */
   async function esperarDegradadoCompleto() {
     const resultado = await recomendar(COMERCIO_ID);
 
@@ -701,9 +704,28 @@ describe("recomendar — sin nada que recomendar", () => {
 
     expect(resultado.recomendaciones).toEqual([]);
     expect(resultado.resumen).toBe(RESUMEN_SIN_RECOMENDACIONES);
-    expect(resultado.modo).toBe("limitado");
     // No se le pregunta al modelo para decir "todo en orden": el crédito del
     // Gateway es uno solo para los tres integrantes.
+    expect(consultarModelo).not.toHaveBeenCalled();
+  });
+
+  test("el modo es `sin_novedades`, no `limitado`", async () => {
+    // Un comercio ordenado no es un comercio degradado. Si compartiera valor
+    // con la caída del proveedor, la pantalla mostraría un aviso de servicio
+    // limitado justo cuando todo está bien.
+    const resultado = await recomendar(COMERCIO_ID);
+
+    expect(resultado.modo).toBe("sin_novedades");
+  });
+
+  test("tampoco es `limitado` cuando además falta el proveedor", async () => {
+    // No hay nada que recomendar Y no hay key: igual gana `sin_novedades`,
+    // porque no se perdió nada por no tener proveedor.
+    hayProveedorConfigurado.mockReturnValue(false);
+
+    const resultado = await recomendar(COMERCIO_ID);
+
+    expect(resultado.modo).toBe("sin_novedades");
     expect(consultarModelo).not.toHaveBeenCalled();
   });
 

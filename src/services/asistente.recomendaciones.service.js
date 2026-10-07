@@ -35,8 +35,23 @@ import {
  *
  * El contrato de salida es el de HU-26 mas los campos propios:
  *
- *   { generadoEn, ventana: { dias, desde }, modo: "ia" | "limitado",
+ *   { generadoEn, ventana: { dias, desde },
+ *     modo: "ia" | "limitado" | "sin_novedades",
  *     resumen: string, recomendaciones: [...] }
+ *
+ * `modo` dice de donde salio el `resumen`, y son TRES y no dos como en HU-26:
+ *
+ *   ia            lo redacto el modelo
+ *   limitado      salio de plantilla porque el proveedor no estaba disponible
+ *   sin_novedades no habia nada que recomendar, asi que no se le pregunto
+ *
+ * El tercero existe para que `limitado` siga significando una sola cosa. Con
+ * dos valores, un comercio sano y ordenado —nada bajo el minimo, todo
+ * rotando— recibia `limitado`, el mismo valor con el que HU-26 avisa "el
+ * asistente esta degradado", y la pantalla tenia que cruzarlo con
+ * `recomendaciones.length` para no mostrar una alarma donde no hay ninguna.
+ * Meter esa deduccion en el Frontend era empujarle al consumidor una regla
+ * que el backend ya sabe.
  *
  * `resumen` nunca es vacio y `modo` nunca es opcional, por lo mismo que en
  * `asistente.service.js`: una pantalla que tiene que adivinar, adivina que todo
@@ -260,8 +275,12 @@ function recomendacionSinHistorial({ dias, ventas, minimas }) {
     tipo: TIPOS_DE_RECOMENDACION.SIN_HISTORIAL,
     prioridad: "baja",
     producto: null,
+    // "Registrar movimiento" es el nombre que le puso el Frontend a la accion
+    // de cargar una venta (SCRUM-105). El texto viaja listo para mostrar: el
+    // Frontend no lo reescribe, lo pinta tal cual llega, asi que el nombre de
+    // la pantalla se mantiene de este lado.
     texto:
-      "Todavía no tengo suficientes ventas registradas para decirte qué productos no se mueven. Registrá tus ventas desde Movimientos y en unos días te lo puedo contar.",
+      "Todavía no tengo suficientes ventas registradas para decirte qué productos no se mueven. Registrá tus ventas desde Registrar movimiento y en unos días te lo puedo contar.",
     porQue: `En ${periodo(dias)} se registraron ${ventas === 1 ? "1 venta" : `${ventas} ventas`}, y necesito al menos ${minimas} para poder comparar.`,
     datos: { ventasEnVentana: ventas, ventasMinimas: minimas, dias },
   };
@@ -499,18 +518,29 @@ function pedidoDeResumen(recomendaciones) {
 /**
  * Las recomendaciones del comercio, con el resumen redactado si se puede.
  *
- * Se cae a `modo: "limitado"` en cuatro casos, y ninguno es un error para quien
- * pregunta. Tres son los de HU-28 —sin key, el proveedor tarda mas que el
- * timeout, el proveedor falla— mas el que es propio de esta HU: que no haya
- * nada para recomendar, donde directamente no se le pregunta al modelo. No se
- * gasta credito compartido para decir "todo en orden".
+ * Se cae a `modo: "limitado"` en los tres casos de HU-28: sin key, el proveedor
+ * tarda mas que el timeout, o el proveedor falla. Ninguno es un error para
+ * quien pregunta, y en los tres `recomendaciones` sale completa: lo unico que
+ * se degrada es el parrafo de arriba.
  *
- * En los cuatro, `recomendaciones` sale completa: lo unico que se degrada es el
- * parrafo de arriba.
+ * El caso de "no hay nada para recomendar" sale aparte, con
+ * `modo: "sin_novedades"`, y tampoco le pregunta al modelo —no se gasta credito
+ * compartido para decir "todo en orden"—. Va separado de `limitado` porque no
+ * es lo mismo: ahi no hay nada degradado, hay un comercio ordenado.
  */
 export async function recomendar(comercioId, { dias } = {}) {
   const analisis = await analizar(comercioId, { dias });
   const { recomendaciones } = analisis;
+
+  // Primero, porque no es una degradacion y no tiene que compartir valor de
+  // `modo` con las que si lo son.
+  if (recomendaciones.length === 0) {
+    return {
+      ...analisis,
+      modo: "sin_novedades",
+      resumen: resumenPorPlantilla(recomendaciones),
+    };
+  }
 
   const limitado = () => ({
     ...analisis,
@@ -518,7 +548,7 @@ export async function recomendar(comercioId, { dias } = {}) {
     resumen: resumenPorPlantilla(recomendaciones),
   });
 
-  if (recomendaciones.length === 0 || !hayProveedorConfigurado()) {
+  if (!hayProveedorConfigurado()) {
     return limitado();
   }
 

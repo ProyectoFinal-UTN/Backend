@@ -129,8 +129,10 @@ router.post(
  *
  *
  *       Cuando no hay nada para recomendar la respuesta es 200 con
- *       `recomendaciones` en `[]` y un `resumen` que lo explica — nunca un
- *       404 ni un error. En ese caso tampoco se consulta al modelo.
+ *       `recomendaciones` en `[]`, `modo` en `sin_novedades` y un `resumen`
+ *       que lo explica — nunca un 404 ni un error. En ese caso tampoco se
+ *       consulta al modelo. `sin_novedades` es un valor propio justamente
+ *       para que no se confunda con el `limitado` de una caída.
  *
  *
  *       Las cifras las calcula Postgres y filtran siempre por el comercio de
@@ -173,21 +175,31 @@ router.post(
  *                       format: date-time
  *                 modo:
  *                   type: string
- *                   enum: [ia, limitado]
+ *                   enum: [ia, limitado, sin_novedades]
  *                   description: >
- *                     De dónde salió el `resumen`, y nada más: `ia` si lo
- *                     redactó el modelo, `limitado` si salió de plantilla. Las
- *                     `recomendaciones` son exactamente las mismas en los dos
+ *                     De dónde salió el `resumen`, y nada más. Las
+ *                     `recomendaciones` son exactamente las mismas en los tres
  *                     casos — lo único que cambia es el párrafo de arriba.
  *
  *
- *                     **Atención al mostrarlo:** con `recomendaciones` vacía el
- *                     `modo` es siempre `limitado`, porque no se le pide un
- *                     resumen al modelo cuando no hay nada que resumir. Eso
- *                     **no** es una degradación del servicio y no corresponde
- *                     mostrar el aviso de "respuesta limitada" que sí
- *                     corresponde en `/consultas`. Para decidir si avisar,
- *                     mirar `modo` **junto con** `recomendaciones.length`.
+ *                     * `ia` — lo redactó el modelo.
+ *
+ *                     * `limitado` — salió de plantilla porque el proveedor no
+ *                       estaba disponible (sin key, timeout o error). **Este es
+ *                       el único que corresponde avisar** como respuesta
+ *                       degradada, igual que en `/consultas`. Las
+ *                       recomendaciones llegan completas: no las escondas.
+ *
+ *                     * `sin_novedades` — no había nada que recomendar, así que
+ *                       no se le pidió resumen al modelo. `recomendaciones`
+ *                       viene en `[]` y el `resumen` lo explica. **No es una
+ *                       degradación:** es un comercio sin nada por debajo del
+ *                       mínimo y con todo rotando.
+ *
+ *
+ *                     Son tres y no dos, a diferencia de `/consultas`,
+ *                     justamente para que no haya que deducir el tercer caso
+ *                     cruzando `modo` con `recomendaciones.length`.
  *                 resumen:
  *                   type: string
  *                   description: Párrafo de presentación. Nunca viene vacío ni nulo.

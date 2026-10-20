@@ -22,6 +22,7 @@ import invitacionesRoutes from "../src/routes/invitaciones.routes.js";
 import miembrosRoutes from "../src/routes/miembros.routes.js";
 import movimientosRoutes from "../src/routes/movimientos.routes.js";
 import productosRoutes from "../src/routes/productos.routes.js";
+import proveedoresRoutes from "../src/routes/proveedores.routes.js";
 import transferenciasRoutes from "../src/routes/transferencias.routes.js";
 import ubicacionesRoutes from "../src/routes/ubicaciones.routes.js";
 
@@ -77,6 +78,13 @@ const MATRIZ = [
   ["POST", "/api/productos/importar", [P, G]],
   ["PUT", `/api/productos/${ID_FALSO}`, [P, G]],
   ["DELETE", `/api/productos/${ID_FALSO}`, [P, G]],
+  // HU-19. El empleado consulta el directorio (para saber a quien llamar) pero
+  // no lo administra.
+  ["GET", "/api/proveedores", [P, G, E]],
+  ["GET", `/api/proveedores/${ID_FALSO}`, [P, G, E]],
+  ["POST", "/api/proveedores", [P, G]],
+  ["PUT", `/api/proveedores/${ID_FALSO}`, [P, G]],
+  ["DELETE", `/api/proveedores/${ID_FALSO}`, [P, G]],
   ["GET", "/api/movimientos", [P, G, E]],
   ["POST", "/api/movimientos", [P, G, E]],
   ["POST", "/api/transferencias", [P, G, E]],
@@ -122,6 +130,7 @@ const MONTAJES = new Map([
   [ubicacionesRoutes, "/api/ubicaciones"],
   [configuracionRoutes, "/api/configuracion"],
   [productosRoutes, "/api/productos"],
+  [proveedoresRoutes, "/api/proveedores"],
   [movimientosRoutes, "/api/movimientos"],
   [transferenciasRoutes, "/api/transferencias"],
   [asistenteRoutes, "/api/asistente"],

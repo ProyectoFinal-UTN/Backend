@@ -10,6 +10,7 @@ import {
 } from "../db/schema.js";
 import { ErrorDeNegocio, esUuid } from "../lib/errores.js";
 import { puede } from "../lib/permissions.js";
+import { exigirProveedorDelComercio } from "./proveedores.service.js";
 
 /**
  * Logica de negocio del registro de movimientos de stock (HU-13).
@@ -398,6 +399,12 @@ export async function registrarMovimiento(
       comercioId,
       datos.ubicacionId,
     );
+    // Hasta HU-19 la FK no existia y se guardaba cualquier UUID bien formado,
+    // incluso el de un proveedor de otro comercio. La FK sola no alcanza para
+    // eso ultimo: valida que el proveedor exista, no de quien es.
+    const proveedorId = datos.proveedorId
+      ? await exigirProveedorDelComercio(tx, comercioId, datos.proveedorId)
+      : null;
 
     return aplicarMovimiento(tx, {
       comercioId,
@@ -407,7 +414,7 @@ export async function registrarMovimiento(
       tipo: datos.tipo,
       cantidad: datos.cantidad,
       motivo: datos.motivo,
-      proveedorId: datos.proveedorId,
+      proveedorId,
     });
   });
 }

@@ -209,7 +209,15 @@ describe("Entradas y salidas", () => {
 
   test("el movimiento registra fecha, usuario y proveedor asociado", async () => {
     const producto = await crearProducto(propietarioA.cookie, 20);
-    const proveedorId = "123e4567-e89b-12d3-a456-426614174999";
+    // Desde HU-19 el proveedor tiene que existir y ser del comercio. Los casos
+    // de proveedor ajeno, inexistente o dado de baja estan en
+    // tests/proveedores.test.js.
+    const proveedor = await request(app)
+      .post("/api/proveedores")
+      .set("Cookie", propietarioA.cookie)
+      .send({ nombre: `Proveedor ${codigoBarras()}` });
+    expect(proveedor.status).toBe(201);
+    const proveedorId = proveedor.body.id;
 
     const respuesta = await registrarMovimiento(propietarioA.cookie, {
       productoId: producto.id,
@@ -222,7 +230,6 @@ describe("Entradas y salidas", () => {
     expect(respuesta.body.movimiento.fecha).toBeTruthy();
     expect(respuesta.body.movimiento.usuarioId).toBeTruthy();
     expect(respuesta.body.movimiento.productoId).toBe(producto.id);
-    // Se persiste sin validar contra PROVEEDOR: esa tabla la crea HU-19.
     expect(respuesta.body.movimiento.proveedorId).toBe(proveedorId);
   });
 });

@@ -54,8 +54,8 @@ router.use(requireAuth);
  *         name: proveedorId
  *         schema: { type: string, format: uuid }
  *         description: >
- *           Proveedor asociado al movimiento. La tabla PROVEEDOR llega con
- *           HU-19; hasta entonces se filtra por el id guardado en el libro.
+ *           Proveedor asociado al movimiento (HU-19). Incluye los dados de
+ *           baja: el historial sigue mostrando a quién se le compró.
  *       - in: query
  *         name: ubicacionId
  *         schema: { type: string, format: uuid }
@@ -205,7 +205,8 @@ router.get(
  *                 format: uuid
  *                 description: >
  *                   Proveedor asociado, cuando corresponde (típicamente en una
- *                   compra). Todavía sin validación contra PROVEEDOR (HU-19).
+ *                   compra). Tiene que ser un proveedor activo del comercio
+ *                   (HU-19).
  *     responses:
  *       201:
  *         description: >
@@ -221,7 +222,7 @@ router.get(
  *       403:
  *         description: El rol no puede registrar movimientos
  *       404:
- *         description: El producto o la ubicación no existen en este comercio
+ *         description: El producto, la ubicación o el proveedor no existen en este comercio
  *       409:
  *         description: >
  *           El movimiento no entra contra el stock actual: o no hay unidades

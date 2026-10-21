@@ -8,6 +8,7 @@ El sistema es multi-comercio: varios comercios conviven en la misma base. **Toda
 
 - Ninguna query de lectura o escritura sobre estas tablas puede omitir el filtro por `comercio_id` del usuario logueado.
 - Esto se resuelve en la capa de `service`, tomando el `comercio_id` desde la sesión (no desde un parámetro que mande el cliente — nunca confiar en un `comercio_id` que venga del body o la query string).
+- **Un id de otra tabla que llega en el body también se valida contra el comercio**, no alcanza con la FK: la FK dice que la fila existe, no de quién es. Sin ese chequeo, un `proveedorId` o `productoId` de otro comercio se guarda igual. Patrón: `exigirProductoDelComercio` y `exigirProveedorDelComercio`, dentro de la misma transacción, con 404 (no 403, para no confirmar que existe en otro comercio).
 - `USER`, `SESSION`, `ORGANIZATION` y `MEMBER` las gestiona Better Auth. `COMERCIO` es una tabla propia, 1:1 con `ORGANIZATION`, para colgarle los datos del negocio (nombre, rubro, dirección, moneda) sin tocar el schema de Better Auth.
 - El rol (`propietario` / `gerente` / `empleado`) es un atributo de `MEMBER`, no una tabla aparte.
 
@@ -50,7 +51,7 @@ Un producto puede tener varios proveedores y viceversa, vía la tabla `PRODUCTO_
 | `COMERCIO` | Propia | 1:1 con `ORGANIZATION` |
 | `UBICACION` | Propia | Configurable por comercio |
 | `PRODUCTO` | Propia | `comercio_id`, `umbral_minimo` |
-| `PROVEEDOR` | Propia | `comercio_id` |
+| `PROVEEDOR` | Propia | `comercio_id`, baja lógica (`activo`): las compras lo referencian |
 | `PRODUCTO_PROVEEDOR` | Propia | N:M |
 | `STOCK` | Propia | Caché, `(producto, ubicacion)`, `comercio_id` denormalizado |
 | `MOVIMIENTO` | Propia | Fuente de verdad, append-only, cantidad con signo |

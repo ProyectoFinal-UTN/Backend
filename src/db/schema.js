@@ -333,6 +333,55 @@ export const tipoMovimiento = pgEnum("tipo_movimiento", [
 ]);
 
 /**
+ * Directorio de proveedores del comercio (HU-19).
+ *
+ * El "contacto" de la HU se guarda en tres columnas y no en una de texto libre:
+ * la persona (`contacto`), el `telefono` y el `correo`, igual que en `comercio`.
+ * Con un solo campo no se puede ni llamar ni escribir sin interpretar a mano
+ * lo que alguien tipeo.
+ *
+ * Baja logica (`activo`), como `producto`: los movimientos de compra apuntan
+ * aca (`movimiento.proveedor_id`) y el historial de compras por proveedor
+ * (HU-21) tiene que seguir mostrando a quien se le compro, aunque hoy ya no se
+ * le compre mas.
+ *
+ * Se relaciona con `producto` en N:M a traves de PRODUCTO_PROVEEDOR (HU-20).
+ */
+export const proveedor = pgTable(
+  "proveedor",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    comercioId: uuid("comercio_id")
+      .notNull()
+      .references(() => comercio.id, { onDelete: "cascade" }),
+    nombre: varchar("nombre", { length: 150 }).notNull(),
+    contacto: varchar("contacto", { length: 150 }),
+    telefono: varchar("telefono", { length: 40 }),
+    correo: varchar("correo", { length: 255 }),
+    rubro: varchar("rubro", { length: 100 }),
+    // Texto libre a proposito ("contado", "30 dias", "50% al pedir"): las
+    // condiciones las fija cada proveedor y no entran en una lista cerrada.
+    condicionesPago: varchar("condiciones_pago", { length: 255 }),
+    activo: boolean("activo").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("proveedor_comercioId_idx").on(table.comercioId),
+    // Un nombre por comercio, sin distinguir mayusculas ("Distribuidora Sur" y
+    // "distribuidora sur" son el mismo proveedor). Parcial, igual que el de
+    // codigo de barras de `producto`: un proveedor dado de baja no bloquea que
+    // se vuelva a cargar con el mismo nombre.
+    uniqueIndex("proveedor_comercio_nombre_uidx")
+      .on(table.comercioId, sql`lower(${table.nombre})`)
+      .where(sql`${table.activo} = true`),
+  ],
+);
+
+/**
  * Libro de movimientos de stock (HU-13). Fuente de verdad del inventario.
  *
  * Es append-only: una fila nunca se edita ni se borra, y `cantidad` se guarda
@@ -377,8 +426,12 @@ export const movimiento = pgTable(
     // ademas romperia las filas que el libro ya tiene cargadas (el libro es
     // append-only: no se pueden completar hacia atras).
     motivo: varchar("motivo", { length: 255 }),
-    // FK pendiente cuando exista PROVEEDOR (HU-19)
-    proveedorId: uuid("proveedor_id"),
+    // A quien se le compro (HU-19). `restrict`: un proveedor con movimientos
+    // no se borra, se da de baja logica. Nullable: solo aplica a compras, y
+    // tampoco es obligatorio en ellas.
+    proveedorId: uuid("proveedor_id").references(() => proveedor.id, {
+      onDelete: "restrict",
+    }),
     // Liga las dos patas de una transferencia (HU-12): la fila con cantidad
     // negativa en la ubicacion de origen y la positiva en la de destino
     // comparten este id. Nullable: los movimientos que no son transferencias
@@ -528,6 +581,15 @@ export const comercioRelations = relations(comercio, ({ many, one }) => ({
   }),
   ubicaciones: many(ubicacion),
   productos: many(producto),
+  proveedores: many(proveedor),
+  movimientos: many(movimiento),
+}));
+
+export const proveedorRelations = relations(proveedor, ({ one, many }) => ({
+  comercio: one(comercio, {
+    fields: [proveedor.comercioId],
+    references: [comercio.id],
+  }),
   movimientos: many(movimiento),
 }));
 
@@ -560,8 +622,8 @@ export const stockRelations = relations(stock, ({ one }) => ({
   }),
 }));
 
-// `proveedorId` y `transferenciaId` no figuran aca: sus tablas todavia no
-// existen (HU-19 y HU-12). Se agregan junto con la FK cuando se creen.
+// `transferenciaId` no tiene relacion declarada aca: HU-12 agrego la FK pero no
+// la relacion. `proveedor` si (HU-19).
 export const movimientoRelations = relations(movimiento, ({ one }) => ({
   comercio: one(comercio, {
     fields: [movimiento.comercioId],
@@ -578,6 +640,10 @@ export const movimientoRelations = relations(movimiento, ({ one }) => ({
   usuario: one(user, {
     fields: [movimiento.usuarioId],
     references: [user.id],
+  }),
+  proveedor: one(proveedor, {
+    fields: [movimiento.proveedorId],
+    references: [proveedor.id],
   }),
 }));
 

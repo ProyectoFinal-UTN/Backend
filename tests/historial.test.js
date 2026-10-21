@@ -25,11 +25,6 @@ const SUFIJO = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 const correo = (etiqueta) => `test-hu14-${etiqueta}-${SUFIJO}@test.local`;
 const PASSWORD = "unaClaveSegura123";
 
-// Todavia no existe la tabla PROVEEDOR (HU-19): `movimiento.proveedor_id` no
-// tiene FK, asi que alcanza con dos UUID fijos para probar el filtro.
-const PROVEEDOR_X = "a0000000-0000-4000-8000-000000000001";
-const PROVEEDOR_Y = "a0000000-0000-4000-8000-000000000002";
-
 // Instante del pasado al que se mueven las altas iniciales, para probar el
 // filtro por fechas contra movimientos que no ocurrieron "recien".
 const FECHA_VIEJA = new Date("2020-01-15T12:00:00.000Z");
@@ -73,6 +68,18 @@ async function crearProducto(cookie, nombre, stockActual) {
   return respuesta.body;
 }
 
+// Desde HU-19 `movimiento.proveedor_id` tiene FK y el proveedor tiene que ser
+// del comercio: ya no alcanza con un UUID inventado.
+async function crearProveedor(cookie, nombre) {
+  const respuesta = await request(app)
+    .post("/api/proveedores")
+    .set("Cookie", cookie)
+    .send({ nombre });
+
+  expect(respuesta.status).toBe(201);
+  return respuesta.body.id;
+}
+
 async function registrarMovimiento(cookie, datos) {
   const respuesta = await request(app)
     .post("/api/movimientos")
@@ -100,10 +107,15 @@ let yerba;
 let fideos;
 let principalId;
 let depositoId;
+let proveedorX;
+let proveedorY;
 
 beforeAll(async () => {
   comercioA = await registrarComercio("a");
   comercioB = await registrarComercio("b");
+
+  proveedorX = await crearProveedor(comercioA.cookie, "Distribuidora X");
+  proveedorY = await crearProveedor(comercioA.cookie, "Distribuidora Y");
 
   // Cada alta con stock deja su movimiento de ajuste inicial (HU-9).
   yerba = await crearProducto(comercioA.cookie, "Yerba 1kg", 20);
@@ -143,7 +155,7 @@ beforeAll(async () => {
       productoId: yerba.id,
       tipo: "compra",
       cantidad: 5,
-      proveedorId: PROVEEDOR_X,
+      proveedorId: proveedorX,
       ubicacionId: principalId,
     })
   ).id;
@@ -172,18 +184,21 @@ beforeAll(async () => {
       productoId: yerba.id,
       tipo: "compra",
       cantidad: 4,
-      proveedorId: PROVEEDOR_Y,
+      proveedorId: proveedorY,
       ubicacionId: depositoId,
     })
   ).id;
 
-  // Un libro en B, que A nunca tiene que ver.
+  // Un libro en B, que A nunca tiene que ver. B tiene su propio proveedor
+  // con el mismo nombre que uno de A: el nombre es unico por comercio, no
+  // global.
   const deB = await crearProducto(comercioB.cookie, "Producto de B", 8);
+  libro.proveedorDeB = await crearProveedor(comercioB.cookie, "Distribuidora X");
   await registrarMovimiento(comercioB.cookie, {
     productoId: deB.id,
     tipo: "compra",
     cantidad: 2,
-    proveedorId: PROVEEDOR_X,
+    proveedorId: libro.proveedorDeB,
   });
   libro.productoDeB = deB.id;
 });
@@ -306,12 +321,20 @@ describe("Filtros individuales", () => {
 
   test("por proveedor", async () => {
     const respuesta = await consultar(comercioA.cookie, {
-      proveedorId: PROVEEDOR_X,
+      proveedorId: proveedorX,
     });
 
-    // El movimiento de B con el mismo proveedor no aparece.
     expect(idsDe(respuesta)).toEqual([libro.compraYerbaX]);
-    expect(respuesta.body.movimientos[0].proveedorId).toBe(PROVEEDOR_X);
+    expect(respuesta.body.movimientos[0].proveedorId).toBe(proveedorX);
+  });
+
+  test("por un proveedor de otro comercio: no trae nada", async () => {
+    const respuesta = await consultar(comercioA.cookie, {
+      proveedorId: libro.proveedorDeB,
+    });
+
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body.movimientos).toEqual([]);
   });
 
   test("por ubicación", async () => {
@@ -382,7 +405,7 @@ describe("Filtros combinados", () => {
   test("tipo + proveedor + ubicación", async () => {
     const respuesta = await consultar(comercioA.cookie, {
       tipo: "compra",
-      proveedorId: PROVEEDOR_Y,
+      proveedorId: proveedorY,
       ubicacionId: depositoId,
     });
 

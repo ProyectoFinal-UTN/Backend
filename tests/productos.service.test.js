@@ -1,5 +1,8 @@
 import { describe, expect, test } from "@jest/globals";
-import { validarDatosProducto } from "../src/services/productos.service.js";
+import {
+  validarDatosProducto,
+  validarUmbralMinimo,
+} from "../src/services/productos.service.js";
 
 /**
  * Unitario puro de la validacion de HU-9 — no toca la base, igual que
@@ -171,4 +174,18 @@ describe("validarDatosProducto — edición (parcial)", () => {
   test("un patch vacío no rechaza nada", () => {
     expect(validarDatosProducto({}, { parcial: true })).toEqual({});
   });
+});
+describe("validarUmbralMinimo (HU-16)", () => {
+  test.each([0, 10, 2147483647])("acepta %p", (valor) => {
+    expect(validarUmbralMinimo(valor)).toBe(valor);
+  });
+
+  test.each([-1, 2.5, "abc", "10", null, undefined, 2147483648, NaN])(
+    "rechaza %p con status 400",
+    (valor) => {
+      expect(() => validarUmbralMinimo(valor)).toThrow(
+        expect.objectContaining({ status: 400 }),
+      );
+    },
+  );
 });

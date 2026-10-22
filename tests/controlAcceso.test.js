@@ -78,6 +78,10 @@ const MATRIZ = [
   ["POST", "/api/productos/importar", [P, G]],
   ["PUT", `/api/productos/${ID_FALSO}`, [P, G]],
   ["DELETE", `/api/productos/${ID_FALSO}`, [P, G]],
+  // HU-16. Configurar el umbral es editar el producto: el empleado lo ve, pero
+  // no lo cambia.
+  ["GET", `/api/productos/${ID_FALSO}/umbral`, [P, G, E]],
+  ["PUT", `/api/productos/${ID_FALSO}/umbral`, [P, G]],
   // HU-19. El empleado consulta el directorio (para saber a quien llamar) pero
   // no lo administra.
   ["GET", "/api/proveedores", [P, G, E]],

@@ -65,6 +65,24 @@ function esEnteroNoNegativo(valor) {
 }
 
 /**
+ * El umbral minimo de reposicion: entero de 0 en adelante. 0 es el default de
+ * la columna y significa "sin umbral configurado" (asi lo lee HU-27).
+ *
+ * Es la misma regla para el alta y la edicion (HU-9) que para el endpoint
+ * propio del umbral (HU-16): vive en un solo lugar para que no se separen.
+ */
+export function validarUmbralMinimo(valor) {
+  if (!esEnteroNoNegativo(valor)) {
+    throw new ErrorDeNegocio(
+      "El umbral mínimo debe ser un número entero entre 0 y 2147483647",
+      400,
+    );
+  }
+
+  return valor;
+}
+
+/**
  * Valida y normaliza los datos de un producto.
  *
  * `parcial` se usa en la edicion: solo valida los campos presentes en el
@@ -129,14 +147,7 @@ export function validarDatosProducto(datosCrudos = {}, { parcial = false } = {})
   }
 
   if (tiene("umbralMinimo")) {
-    const umbralMinimo = datosCrudos.umbralMinimo;
-    if (!esEnteroNoNegativo(umbralMinimo)) {
-      throw new ErrorDeNegocio(
-        "El umbral mínimo debe ser un número entero entre 0 y 2147483647",
-        400,
-      );
-    }
-    datos.umbralMinimo = umbralMinimo;
+    datos.umbralMinimo = validarUmbralMinimo(datosCrudos.umbralMinimo);
   }
 
   if (!parcial) {
@@ -448,6 +459,83 @@ export async function actualizarProducto(comercioId, idCrudo, datosCrudos = {}) 
   } catch (error) {
     throw traducirCodigoBarrasDuplicado(error, datos.codigoBarras);
   }
+}
+
+/**
+ * Lo que devuelven los dos endpoints del umbral (HU-16): solo el dato que se
+ * configura, no el producto entero.
+ */
+const CAMPOS_UMBRAL = {
+  productoId: producto.id,
+  umbralMinimo: producto.umbralMinimo,
+};
+
+/**
+ * Lee el umbral minimo de reposicion de un producto (HU-16).
+ *
+ * Un producto de otro comercio da el mismo 404 que uno inexistente, y no un
+ * 403: un 403 confirmaria que ese id existe en algun otro comercio.
+ */
+export async function obtenerUmbral(comercioId, idCrudo) {
+  if (!esUuid(idCrudo)) {
+    throw new ErrorDeNegocio("El producto no existe", 404);
+  }
+
+  const [fila] = await db
+    .select(CAMPOS_UMBRAL)
+    .from(producto)
+    .where(
+      and(
+        eq(producto.id, idCrudo),
+        eq(producto.comercioId, comercioId),
+        eq(producto.activo, true),
+      ),
+    )
+    .limit(1);
+
+  if (!fila) {
+    throw new ErrorDeNegocio("El producto no existe", 404);
+  }
+
+  return fila;
+}
+
+/**
+ * Configura el umbral minimo de reposicion de un producto (HU-16).
+ *
+ * Solo toca `umbral_minimo`: cualquier otro campo que venga en el body se
+ * ignora (editar el resto del producto es `PUT /api/productos/:id`). El
+ * filtro por comercio va en el mismo UPDATE, asi que un producto ajeno no se
+ * modifica nunca: no hay una lectura previa que pueda quedar desfasada.
+ */
+export async function actualizarUmbral(comercioId, idCrudo, datosCrudos = {}) {
+  if (!esUuid(idCrudo)) {
+    throw new ErrorDeNegocio("El producto no existe", 404);
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(datosCrudos, "umbralMinimo")) {
+    throw new ErrorDeNegocio("Falta el umbral mínimo (umbralMinimo)", 400);
+  }
+
+  const umbralMinimo = validarUmbralMinimo(datosCrudos.umbralMinimo);
+
+  const [actualizado] = await db
+    .update(producto)
+    .set({ umbralMinimo })
+    .where(
+      and(
+        eq(producto.id, idCrudo),
+        eq(producto.comercioId, comercioId),
+        eq(producto.activo, true),
+      ),
+    )
+    .returning(CAMPOS_UMBRAL);
+
+  if (!actualizado) {
+    throw new ErrorDeNegocio("El producto no existe", 404);
+  }
+
+  return actualizado;
 }
 
 /**

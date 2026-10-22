@@ -313,6 +313,98 @@ router.put(
 
 /**
  * @openapi
+ * components:
+ *   schemas:
+ *     UmbralProducto:
+ *       type: object
+ *       properties:
+ *         productoId: { type: string, format: uuid }
+ *         umbralMinimo:
+ *           type: integer
+ *           minimum: 0
+ *           example: 10
+ *           description: >
+ *             Cantidad a partir de la cual el producto se considera para
+ *             reponer. 0 significa que no tiene umbral configurado.
+ *
+ * /api/productos/{id}/umbral:
+ *   get:
+ *     summary: Lee el umbral mínimo de reposición de un producto (HU-16)
+ *     tags: [Productos]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: El umbral del producto
+ *         content:
+ *           application/json:
+ *             schema: { $ref: "#/components/schemas/UmbralProducto" }
+ *       401:
+ *         description: No hay sesión activa
+ *       404:
+ *         description: >
+ *           El producto no existe, fue eliminado o es de otro comercio (no se
+ *           distingue a propósito, para no revelar productos ajenos)
+ *   put:
+ *     summary: Configura el umbral mínimo de reposición de un producto (HU-16)
+ *     description: >
+ *       Solo modifica el umbral. Cualquier otro campo del body se ignora: para
+ *       editar el resto del producto está `PUT /api/productos/{id}`.
+ *     tags: [Productos]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [umbralMinimo]
+ *             properties:
+ *               umbralMinimo:
+ *                 type: integer
+ *                 minimum: 0
+ *                 maximum: 2147483647
+ *                 example: 10
+ *     responses:
+ *       200:
+ *         description: Umbral actualizado
+ *         content:
+ *           application/json:
+ *             schema: { $ref: "#/components/schemas/UmbralProducto" }
+ *       400:
+ *         description: >
+ *           Falta `umbralMinimo`, o no es un número entero entre 0 y
+ *           2147483647 (negativo, decimal, texto o null)
+ *       401:
+ *         description: No hay sesión activa
+ *       403:
+ *         description: El rol no puede modificar productos
+ *       404:
+ *         description: >
+ *           El producto no existe, fue eliminado o es de otro comercio (no se
+ *           distingue a propósito, para no revelar productos ajenos)
+ */
+router.get(
+  "/:id/umbral",
+  requirePermission({ producto: ["read"] }),
+  controller.obtenerUmbral,
+);
+
+router.put(
+  "/:id/umbral",
+  requirePermission({ producto: ["update"] }),
+  controller.actualizarUmbral,
+);
+
+/**
+ * @openapi
  * /api/productos/{id}:
  *   delete:
  *     summary: Elimina (lógicamente) un producto (HU-9)

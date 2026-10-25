@@ -38,6 +38,13 @@ jest.unstable_mockModule("../src/services/asistente.consultas.service.js", () =>
   resumenDeActividad: jest.fn(async () => ({ porTipo: [] })),
 }));
 
+// Los proveedores sugeridos de HU-20 salen de otra consulta SQL; se mockea igual
+// que las de arriba. Su comportamiento se prueba en
+// tests/asistente.recomendaciones.proveedores.test.js.
+jest.unstable_mockModule("../src/services/productoProveedor.service.js", () => ({
+  proveedoresDeProductos: jest.fn(async () => new Map()),
+}));
+
 const {
   RESUMEN_SIN_RECOMENDACIONES,
   TIPOS_DE_RECOMENDACION,

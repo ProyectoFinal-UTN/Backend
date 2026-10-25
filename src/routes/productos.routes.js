@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as controller from "../controllers/productos.controller.js";
+import * as vinculos from "../controllers/productoProveedor.controller.js";
 import {
   requireAuth,
   requirePermission,
@@ -104,6 +105,102 @@ router.get(
   "/:id",
   requirePermission({ producto: ["read"] }),
   controller.obtener,
+);
+
+/**
+ * @openapi
+ * /api/productos/{id}/proveedores:
+ *   get:
+ *     summary: Proveedores asociados a un producto (HU-20)
+ *     description: Solo los activos, ordenados por nombre.
+ *     tags: [Productos, Proveedores]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Los proveedores del producto (puede ser una lista vacía)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: "#/components/schemas/Proveedor" }
+ *       404:
+ *         description: El producto no existe en este comercio
+ *   post:
+ *     summary: Asocia un proveedor al producto (HU-20)
+ *     description: >
+ *       El producto y el proveedor tienen que ser activos y del comercio de la
+ *       sesión. Un producto puede tener varios proveedores.
+ *     tags: [Productos, Proveedores]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [proveedorId]
+ *             properties:
+ *               proveedorId: { type: string, format: uuid }
+ *     responses:
+ *       201:
+ *         description: Asociado
+ *       400:
+ *         description: Falta el proveedor
+ *       403:
+ *         description: El rol no puede modificar proveedores
+ *       404:
+ *         description: El producto o el proveedor no existen en este comercio
+ *       409:
+ *         description: Ese proveedor ya estaba asociado al producto
+ */
+router.get(
+  "/:id/proveedores",
+  requirePermission({ proveedor: ["read"] }),
+  vinculos.listarProveedoresDeProducto,
+);
+
+router.post(
+  "/:id/proveedores",
+  requirePermission({ proveedor: ["update"] }),
+  vinculos.asociar,
+);
+
+/**
+ * @openapi
+ * /api/productos/{id}/proveedores/{proveedorId}:
+ *   delete:
+ *     summary: Quita la asociación entre el producto y el proveedor (HU-20)
+ *     description: >
+ *       Es idempotente: si no estaban asociados, o alguno es de otro comercio,
+ *       devuelve 204 igual.
+ *     tags: [Productos, Proveedores]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: proveedorId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       204:
+ *         description: Ya no están asociados
+ *       403:
+ *         description: El rol no puede modificar proveedores
+ */
+router.delete(
+  "/:id/proveedores/:proveedorId",
+  requirePermission({ proveedor: ["update"] }),
+  vinculos.desasociar,
 );
 
 /**

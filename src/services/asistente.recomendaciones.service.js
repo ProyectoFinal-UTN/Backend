@@ -9,6 +9,7 @@ import {
   periodo,
   queda,
 } from "./asistente.reglas.service.js";
+import { proveedoresDeProductos } from "./productoProveedor.service.js";
 
 /**
  * Recomendaciones proactivas del Asistente Inteligente (HU-27, RF6).
@@ -220,8 +221,14 @@ export function ventasMinimas() {
  * Quedarse sin nada es `alta` y estar en el umbral es `media`: las dos piden la
  * misma accion, pero una ya le esta costando ventas al negocio y la otra
  * todavia no.
+ *
+ * `proveedoresSugeridos` son los proveedores asociados al producto (HU-20): a
+ * quien pedirle. Va siempre, vacio si no tiene ninguno, para que la pantalla
+ * no tenga que distinguir "sin proveedores" de "campo ausente". No entra en el
+ * `texto` a proposito: el texto lo reusan el resumen y el modo degradado, y un
+ * nombre de proveedor ahi no agrega nada que la tarjeta no muestre aparte.
  */
-function recomendacionDeReposicion(fila) {
+function recomendacionDeReposicion(fila, proveedoresSugeridos = []) {
   const sinNada = fila.enStock === 0;
 
   return {
@@ -242,6 +249,7 @@ function recomendacionDeReposicion(fila) {
       unidadMedida: fila.unidadMedida,
       faltanteHastaElUmbral: fila.faltanteHastaElUmbral,
     },
+    proveedoresSugeridos,
   };
 }
 
@@ -326,7 +334,16 @@ export async function analizar(comercioId, { dias } = {}) {
 
   const paraReponer = bajoElUmbral.slice(0, LIMITE_POR_TIPO);
 
-  const recomendaciones = paraReponer.map(recomendacionDeReposicion);
+  // Una sola consulta para los proveedores de todos los que se muestran, y
+  // ninguna si no hay nada para reponer.
+  const proveedoresPorProducto = await proveedoresDeProductos(
+    comercioId,
+    paraReponer.map((fila) => fila.id),
+  );
+
+  const recomendaciones = paraReponer.map((fila) =>
+    recomendacionDeReposicion(fila, proveedoresPorProducto.get(fila.id)),
+  );
   const minimas = ventasMinimas();
 
   // Un producto no puede recibir dos recomendaciones: estar bajo el umbral y

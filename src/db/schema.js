@@ -6,6 +6,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -382,6 +383,45 @@ export const proveedor = pgTable(
 );
 
 /**
+ * A quien se le puede comprar cada producto (HU-20). N:M: un producto puede
+ * tener varios proveedores y un proveedor vende varios productos.
+ *
+ * La clave es el par (producto, proveedor): asociar dos veces lo mismo no tiene
+ * significado, y con la PK compuesta la base lo impide sola en vez de depender
+ * de un SELECT previo con su ventana de carrera.
+ *
+ * `comercio_id` denormalizado, por lo mismo que en `stock`: para filtrar sin
+ * acordarse del join. Que producto y proveedor sean de ESE comercio lo valida
+ * el service antes de insertar; la base no puede chequearlo con una FK.
+ *
+ * `cascade` en las dos FK, a diferencia de `movimiento`: esto no es un libro,
+ * es un vinculo vigente. Igual hoy no se dispara nunca, porque producto y
+ * proveedor se borran logicamente; el vinculo con uno dado de baja queda en la
+ * tabla y las consultas lo filtran por `activo`.
+ */
+export const productoProveedor = pgTable(
+  "producto_proveedor",
+  {
+    comercioId: uuid("comercio_id")
+      .notNull()
+      .references(() => comercio.id, { onDelete: "cascade" }),
+    productoId: uuid("producto_id")
+      .notNull()
+      .references(() => producto.id, { onDelete: "cascade" }),
+    proveedorId: uuid("proveedor_id")
+      .notNull()
+      .references(() => proveedor.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.productoId, table.proveedorId] }),
+    // La PK ya sirve para "proveedores de un producto" (producto_id va
+    // primero). Este es para el otro sentido: "productos de un proveedor".
+    index("producto_proveedor_proveedorId_idx").on(table.proveedorId),
+  ],
+);
+
+/**
  * Libro de movimientos de stock (HU-13). Fuente de verdad del inventario.
  *
  * Es append-only: una fila nunca se edita ni se borra, y `cantidad` se guarda
@@ -591,7 +631,22 @@ export const proveedorRelations = relations(proveedor, ({ one, many }) => ({
     references: [comercio.id],
   }),
   movimientos: many(movimiento),
+  productos: many(productoProveedor),
 }));
+
+export const productoProveedorRelations = relations(
+  productoProveedor,
+  ({ one }) => ({
+    producto: one(producto, {
+      fields: [productoProveedor.productoId],
+      references: [producto.id],
+    }),
+    proveedor: one(proveedor, {
+      fields: [productoProveedor.proveedorId],
+      references: [proveedor.id],
+    }),
+  }),
+);
 
 export const ubicacionRelations = relations(ubicacion, ({ one, many }) => ({
   comercio: one(comercio, {
@@ -609,6 +664,7 @@ export const productoRelations = relations(producto, ({ one, many }) => ({
   }),
   stocks: many(stock),
   movimientos: many(movimiento),
+  proveedores: many(productoProveedor),
 }));
 
 export const stockRelations = relations(stock, ({ one }) => ({

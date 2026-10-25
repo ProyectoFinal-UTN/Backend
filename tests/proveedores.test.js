@@ -385,7 +385,11 @@ describe("Proveedor de un movimiento de compra", () => {
         umbralMinimo: 2,
         stockActual: 10,
       });
-    expect(respuesta.status).toBe(201);
+    // Un `throw` y no un `expect`: en un `beforeAll` el expect no corresponde
+    // (jest/no-standalone-expect). Mismo criterio que historial.test.js.
+    if (respuesta.status !== 201) {
+      throw new Error(`No se pudo crear el producto: ${respuesta.status}`);
+    }
     productoA = respuesta.body;
   });
 

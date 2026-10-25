@@ -119,12 +119,16 @@ describe("validarDatosProveedor — alta (no parcial)", () => {
   });
 
   test("los errores son 400", () => {
+    // El `expect` va afuera del `catch`: adentro, si la funcion no lanzara, el
+    // test pasaria sin haber afirmado nada (jest/no-conditional-expect).
+    let error;
     try {
       validarDatosProveedor({});
-      throw new Error("no lanzó");
-    } catch (error) {
-      expect(error.status).toBe(400);
+    } catch (lanzado) {
+      error = lanzado;
     }
+
+    expect(error?.status).toBe(400);
   });
 });
 

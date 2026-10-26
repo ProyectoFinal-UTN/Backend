@@ -76,6 +76,31 @@ export async function actualizar(req, res, next) {
   }
 }
 
+/** Umbral minimo de reposicion (HU-16). */
+export async function obtenerUmbral(req, res, next) {
+  try {
+    res.json(
+      await productosService.obtenerUmbral(req.comercioId, req.params.id),
+    );
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function actualizarUmbral(req, res, next) {
+  try {
+    res.json(
+      await productosService.actualizarUmbral(
+        req.comercioId,
+        req.params.id,
+        req.body,
+      ),
+    );
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function eliminar(req, res, next) {
   try {
     await productosService.eliminarProducto(req.comercioId, req.params.id);

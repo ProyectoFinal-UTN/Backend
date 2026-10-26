@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as controller from "../controllers/proveedores.controller.js";
+import * as vinculos from "../controllers/productoProveedor.controller.js";
 import {
   requireAuth,
   requirePermission,
@@ -72,6 +73,33 @@ router.get(
   "/:id",
   requirePermission({ proveedor: ["read"] }),
   controller.obtener,
+);
+
+/**
+ * @openapi
+ * /api/proveedores/{id}/productos:
+ *   get:
+ *     summary: Productos asociados a un proveedor (HU-20)
+ *     description: >
+ *       Solo los activos, ordenados por nombre. Para asociar o quitar se usa
+ *       `/api/productos/{id}/proveedores`: el vínculo es uno solo y se escribe
+ *       por un único lado.
+ *     tags: [Proveedores]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Los productos del proveedor (puede ser una lista vacía)
+ *       404:
+ *         description: El proveedor no existe en este comercio
+ */
+router.get(
+  "/:id/productos",
+  requirePermission({ proveedor: ["read"] }),
+  vinculos.listarProductosDeProveedor,
 );
 
 /**

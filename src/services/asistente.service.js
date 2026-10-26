@@ -10,6 +10,7 @@ import {
   stockDeProducto,
 } from "./asistente.consultas.service.js";
 import { responderPorReglas } from "./asistente.reglas.service.js";
+import { REGLAS_DE_TONO } from "./asistente.tono.js";
 
 /**
  * Asistente Inteligente: consulta en lenguaje natural (HU-26, RF6, RNF2).
@@ -45,7 +46,8 @@ Reglas:
 - Respondé unicamente con datos que hayas obtenido de las herramientas. Nunca inventes cantidades, nombres de productos ni fechas.
 - Si una herramienta no devuelve resultados, decilo con todas las letras ("no encontre ningun producto que se llame asi") en vez de suponer.
 - Si la pregunta no se puede contestar con las herramientas que tenes, explicá que eso todavia no lo podes consultar. No pidas disculpas de más.
-- Escribí en español rioplatense, breve y directo. Dos o tres oraciones alcanzan.
+${REGLAS_DE_TONO}
+- Sé breve y directo. Dos o tres oraciones alcanzan.
 - Usá listas solo cuando enumeres productos o movimientos.
 - No hables de "herramientas", "consultas", "base de datos" ni "sistema": la persona quiere saber de su negocio.
 - Las cantidades van con su unidad de medida cuando la tengas.

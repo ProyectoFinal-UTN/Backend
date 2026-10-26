@@ -334,7 +334,7 @@ function variantesDeBusqueda(busqueda) {
 
 async function responderStock(comercioId, { busqueda }) {
   if (!busqueda) {
-    return "¿De qué producto? Decime el nombre, por ejemplo: «¿cuánta yerba me queda?».";
+    return "¿De qué producto? Podés preguntarme por su nombre, por ejemplo: «¿cuánta yerba me queda?».";
   }
 
   let encontrados = [];

@@ -38,6 +38,13 @@ jest.unstable_mockModule("../src/services/asistente.consultas.service.js", () =>
   resumenDeActividad: jest.fn(async () => ({ porTipo: [] })),
 }));
 
+// Los proveedores sugeridos de HU-20 salen de otra consulta SQL; se mockea igual
+// que las de arriba. Su comportamiento se prueba en
+// tests/asistente.recomendaciones.proveedores.test.js.
+jest.unstable_mockModule("../src/services/productoProveedor.service.js", () => ({
+  proveedoresDeProductos: jest.fn(async () => new Map()),
+}));
+
 const {
   RESUMEN_SIN_RECOMENDACIONES,
   TIPOS_DE_RECOMENDACION,
@@ -474,7 +481,8 @@ describe("analizar — compuerta de histórico", () => {
 
     expect(recomendacion.producto).toBeNull();
     expect(recomendacion.prioridad).toBe("baja");
-    expect(recomendacion.texto).toContain("Registrá tus ventas");
+    // Sin imperativo ("Registrá…"): el asistente sugiere, no da órdenes.
+    expect(recomendacion.texto).toContain("cargues las ventas desde Registrar movimiento");
     expect(recomendacion.porQue).toContain("0 ventas");
     expect(recomendacion.porQue).toContain("al menos 3");
     expect(recomendacion.datos).toMatchObject({

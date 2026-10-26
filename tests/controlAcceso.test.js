@@ -89,6 +89,12 @@ const MATRIZ = [
   ["POST", "/api/proveedores", [P, G]],
   ["PUT", `/api/proveedores/${ID_FALSO}`, [P, G]],
   ["DELETE", `/api/proveedores/${ID_FALSO}`, [P, G]],
+  // HU-20. Asociar y quitar es modificar el directorio (`proveedor:update`);
+  // consultar a quien comprarle algo lo pueden los tres.
+  ["GET", `/api/productos/${ID_FALSO}/proveedores`, [P, G, E]],
+  ["POST", `/api/productos/${ID_FALSO}/proveedores`, [P, G]],
+  ["DELETE", `/api/productos/${ID_FALSO}/proveedores/${ID_FALSO}`, [P, G]],
+  ["GET", `/api/proveedores/${ID_FALSO}/productos`, [P, G, E]],
   ["GET", "/api/movimientos", [P, G, E]],
   ["POST", "/api/movimientos", [P, G, E]],
   ["POST", "/api/transferencias", [P, G, E]],
@@ -272,7 +278,10 @@ describe("Guardia: cada endpoint valida el rol", () => {
     const enLaMatriz = MATRIZ.map(([metodo, ruta]) =>
       `${metodo} ${ruta}`
         .replace(`/codigo/${CODIGO}`, "/codigo/:codigoBarras")
-        .replace(ID_FALSO, ":id"),
+        .replace(ID_FALSO, ":id")
+        // El segundo id de una ruta anidada (HU-20). Va despues: el primer
+        // `replace` ya consumio el `:id` de la ruta.
+        .replace(`/proveedores/${ID_FALSO}`, "/proveedores/:proveedorId"),
     ).sort();
 
     expect(enLaMatriz).toEqual(conPermiso);

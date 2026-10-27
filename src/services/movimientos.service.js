@@ -11,6 +11,7 @@ import {
 import { ErrorDeNegocio, esUuid } from "../lib/errores.js";
 import { puede } from "../lib/permissions.js";
 import { exigirProveedorDelComercio } from "./proveedores.service.js";
+import { programarAvisoDeReposicion } from "./push.service.js";
 
 /**
  * Logica de negocio del registro de movimientos de stock (HU-13).
@@ -388,7 +389,7 @@ export async function registrarMovimiento(
 ) {
   const datos = validarDatosMovimiento(datosCrudos);
 
-  return db.transaction(async (tx) => {
+  const registrado = await db.transaction(async (tx) => {
     const productoId = await exigirProductoDelComercio(
       tx,
       comercioId,
@@ -417,6 +418,12 @@ export async function registrarMovimiento(
       proveedorId,
     });
   });
+
+  // Push de reposicion (HU-18). Va despues del commit y sin await: si el
+  // servicio de push falla o tarda, el movimiento ya quedo guardado igual.
+  programarAvisoDeReposicion(comercioId, registrado.movimiento);
+
+  return registrado;
 }
 
 /* ---------------------------------------------------------------------------

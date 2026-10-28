@@ -493,6 +493,13 @@ export const movimiento = pgTable(
     index("movimiento_ubicacionId_idx").on(table.ubicacionId),
     // Para el filtro por rango de fechas del historial (HU-14).
     index("movimiento_fecha_idx").on(table.fecha),
+    // Para el historial de compras de un proveedor (HU-21): el filtro es
+    // siempre proveedor + rango de fecha, y el orden tambien es por fecha, asi
+    // que el compuesto sirve para los tres pasos de una sola pasada. Sin el, la
+    // query escanea el libro entero: `proveedor_id` no tenia ningun indice.
+    // Sin `DESC` en la definicion: Postgres recorre un btree para atras sin
+    // costo extra. De paso le da indice al chequeo del `restrict` de la FK.
+    index("movimiento_proveedor_fecha_idx").on(table.proveedorId, table.fecha),
     // Para traer las dos patas de una transferencia sin escanear el libro
     // entero (HU-12).
     index("movimiento_transferenciaId_idx").on(table.transferenciaId),

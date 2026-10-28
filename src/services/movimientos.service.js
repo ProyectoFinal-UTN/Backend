@@ -436,8 +436,14 @@ export async function registrarMovimiento(
  */
 const TIPOS_DEL_HISTORIAL = tipoMovimiento.enumValues;
 
-const LIMITE_HISTORIAL_POR_DEFECTO = 50;
-const LIMITE_HISTORIAL_MAXIMO = 200;
+/**
+ * Exportados (como `leerInstante` y `leerEnteroPositivo`) para que el historial
+ * de compras por proveedor (HU-21) valide su periodo y su paginacion con las
+ * mismas reglas y los mismos mensajes que este, en vez de con una copia que se
+ * vaya separando con el tiempo.
+ */
+export const LIMITE_HISTORIAL_POR_DEFECTO = 50;
+export const LIMITE_HISTORIAL_MAXIMO = 200;
 
 /**
  * Fecha y hora ISO 8601 con zona explicita (`Z` u offset).
@@ -450,7 +456,7 @@ const LIMITE_HISTORIAL_MAXIMO = 200;
 const FORMATO_INSTANTE =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 
-function leerInstante(valor, nombre) {
+export function leerInstante(valor, nombre) {
   if (valor === undefined || valor === null || valor === "") {
     return undefined;
   }
@@ -490,7 +496,7 @@ function leerUuidOpcional(valor, nombre) {
   return valor;
 }
 
-function leerEnteroPositivo(valor, porDefecto, nombre) {
+export function leerEnteroPositivo(valor, porDefecto, nombre) {
   if (valor === undefined || valor === null || valor === "") {
     return porDefecto;
   }

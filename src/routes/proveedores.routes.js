@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as controller from "../controllers/proveedores.controller.js";
+import * as compras from "../controllers/comprasProveedor.controller.js";
 import * as vinculos from "../controllers/productoProveedor.controller.js";
 import {
   requireAuth,
@@ -100,6 +101,155 @@ router.get(
   "/:id/productos",
   requirePermission({ proveedor: ["read"] }),
   vinculos.listarProductosDeProveedor,
+);
+
+/**
+ * @openapi
+ * /api/proveedores/{id}/historial-compras:
+ *   get:
+ *     summary: Historial de compras hechas a un proveedor (HU-21)
+ *     description: >
+ *       Se construye a partir del libro de movimientos: las filas de tipo
+ *       `compra` que apuntan a este proveedor, de la más nueva a la más vieja,
+ *       con filtro por período y paginación.
+ *
+ *
+ *       El tipo es fijo y no se puede cambiar: un ajuste positivo o la pata de
+ *       destino de una transferencia también son entradas de stock, pero no son
+ *       compras a un proveedor. Para filtrar el libro por cualquier otro
+ *       criterio está `GET /api/movimientos` (HU-14).
+ *
+ *
+ *       Las compras **sin** proveedor no aparecen en ningún historial:
+ *       `proveedor_id` es opcional en el registro de movimientos (HU-13), y una
+ *       compra que no dice a quién se le compró no se le puede atribuir a
+ *       nadie.
+ *
+ *
+ *       Incluye a los proveedores dados de baja: el historial tiene que seguir
+ *       mostrando a quién se le compró aunque hoy ya no se le compre más. El
+ *       bloque `proveedor` trae `activo` para poder etiquetarlo.
+ *
+ *
+ *       **El historial no informa montos.** El libro de movimientos (HU-13) no
+ *       guarda precio ni costo, y no hay ningún campo monetario en las tablas
+ *       relacionadas, así que no hay de dónde calcularlos. `resumen.montos`
+ *       viene explícitamente en `null`, y el resumen informa el volumen
+ *       (compras, unidades, primera y última) en su lugar.
+ *     tags: [Proveedores]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: desde
+ *         schema: { type: string, format: date-time }
+ *         example: "2026-01-01T03:00:00.000Z"
+ *         description: >
+ *           Límite inferior del período, inclusive. Fecha y hora ISO 8601 con
+ *           zona explícita (`Z` u offset): dónde empieza "su" día lo sabe el
+ *           cliente, no el servidor. Se puede omitir para no acotar por abajo.
+ *       - in: query
+ *         name: hasta
+ *         schema: { type: string, format: date-time }
+ *         example: "2026-12-31T02:59:59.999Z"
+ *         description: Límite superior del período, inclusive. Mismo formato que `desde`.
+ *       - in: query
+ *         name: pagina
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - in: query
+ *         name: limite
+ *         schema: { type: integer, minimum: 1, default: 50, maximum: 200 }
+ *         description: Si se pide más del máximo, se recorta a 200.
+ *     responses:
+ *       200:
+ *         description: Página de compras, el resumen del período y la paginación
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 proveedor:
+ *                   type: object
+ *                   description: >
+ *                     Para titular la pantalla sin otra consulta. Hace falta
+ *                     acá porque `GET /api/proveedores/{id}` no devuelve a los
+ *                     dados de baja, que este historial sí muestra.
+ *                   properties:
+ *                     id: { type: string, format: uuid }
+ *                     nombre: { type: string, example: Distribuidora Sur }
+ *                     activo: { type: boolean }
+ *                 compras:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: string, format: uuid }
+ *                       fecha: { type: string, format: date-time, example: "2026-10-12T14:03:00.000Z" }
+ *                       cantidad: { type: integer, example: 24, description: Unidades compradas, siempre positiva }
+ *                       motivo: { type: string, nullable: true }
+ *                       producto:
+ *                         type: object
+ *                         description: >
+ *                           Sale aunque el producto esté dado de baja
+ *                           (`activo: false`): se le compró igual.
+ *                         properties:
+ *                           id: { type: string, format: uuid }
+ *                           nombre: { type: string }
+ *                           codigoBarras: { type: string }
+ *                           unidadMedida: { type: string }
+ *                           activo: { type: boolean }
+ *                       ubicacion:
+ *                         type: object
+ *                         properties:
+ *                           id: { type: string, format: uuid }
+ *                           nombre: { type: string }
+ *                 resumen:
+ *                   type: object
+ *                   description: >
+ *                     Calculado sobre todo el período filtrado, no sobre la
+ *                     página: no cambia al pasar de página.
+ *                   properties:
+ *                     compras: { type: integer, example: 37, description: Cuántas compras hay en el período }
+ *                     unidades: { type: integer, example: 912, description: Suma de las cantidades compradas }
+ *                     primeraCompra: { type: string, format: date-time, nullable: true }
+ *                     ultimaCompra: { type: string, format: date-time, nullable: true }
+ *                     montos:
+ *                       type: object
+ *                       nullable: true
+ *                       description: >
+ *                         Siempre `null`. El modelo de movimientos no guarda
+ *                         precio ni costo, así que no hay montos para informar.
+ *                 paginacion:
+ *                   type: object
+ *                   properties:
+ *                     pagina: { type: integer }
+ *                     limite: { type: integer }
+ *                     total: { type: integer }
+ *                     totalPaginas: { type: integer }
+ *       400:
+ *         description: >
+ *           Algún filtro es inválido: fecha sin formato ISO con zona, `desde`
+ *           posterior a `hasta`, o `pagina`/`limite` que no son enteros
+ *           positivos
+ *       401:
+ *         description: No hay sesión activa
+ *       403:
+ *         description: El rol no puede consultar movimientos
+ *       404:
+ *         description: >
+ *           El proveedor no existe en este comercio. Mismo mensaje que cuando
+ *           el id no existe en ninguno: decir "existe pero no es tuyo"
+ *           filtraría información de otro comercio
+ */
+router.get(
+  "/:id/historial-compras",
+  // El permiso acompaña al dato que se devuelve y no al prefijo de la URL,
+  // igual que `GET /api/productos/{id}/proveedores` (HU-20) pide
+  // `proveedor: ["read"]`: lo que se lee acá es el libro de movimientos.
+  requirePermission({ movimiento: ["read"] }),
+  compras.listarHistorial,
 );
 
 /**

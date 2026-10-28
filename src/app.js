@@ -18,6 +18,7 @@ import miembrosRoutes from "./routes/miembros.routes.js";
 import movimientosRoutes from "./routes/movimientos.routes.js";
 import productosRoutes from "./routes/productos.routes.js";
 import proveedoresRoutes from "./routes/proveedores.routes.js";
+import pushRoutes from "./routes/push.routes.js";
 import transferenciasRoutes from "./routes/transferencias.routes.js";
 import ubicacionesRoutes from "./routes/ubicaciones.routes.js";
 
@@ -313,6 +314,7 @@ app.use("/api/proveedores", proveedoresRoutes);
 app.use("/api/movimientos", movimientosRoutes);
 app.use("/api/transferencias", transferenciasRoutes);
 app.use("/api/asistente", asistenteRoutes);
+app.use("/api/push", pushRoutes);
 
 // Manejador de errores: cierra la cadena para que un throw en un service no
 // deje la request colgada. Va siempre ultimo.

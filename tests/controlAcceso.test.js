@@ -23,6 +23,7 @@ import miembrosRoutes from "../src/routes/miembros.routes.js";
 import movimientosRoutes from "../src/routes/movimientos.routes.js";
 import productosRoutes from "../src/routes/productos.routes.js";
 import proveedoresRoutes from "../src/routes/proveedores.routes.js";
+import pushRoutes from "../src/routes/push.routes.js";
 import transferenciasRoutes from "../src/routes/transferencias.routes.js";
 import ubicacionesRoutes from "../src/routes/ubicaciones.routes.js";
 
@@ -112,6 +113,12 @@ const MATRIZ = [
   // deja la key en vacio para toda la suite. Sin ese candado, esta fila le
   // gasta credito compartido a cada `npm test`.
   ["GET", "/api/asistente/recomendaciones", [P, G]],
+  // HU-18. El push es otra forma de ver las alertas (`alerta:read`), que hoy
+  // tienen los tres roles. La clave publica puede dar 503 si el entorno no
+  // tiene claves VAPID: igual pasa la puerta.
+  ["GET", "/api/push/clave-publica", [P, G, E]],
+  ["POST", "/api/push/suscripciones", [P, G, E]],
+  ["DELETE", "/api/push/suscripciones", [P, G, E]],
   ["GET", "/api/mis-datos", [P, G, E]],
 ];
 
@@ -144,6 +151,7 @@ const MONTAJES = new Map([
   [movimientosRoutes, "/api/movimientos"],
   [transferenciasRoutes, "/api/transferencias"],
   [asistenteRoutes, "/api/asistente"],
+  [pushRoutes, "/api/push"],
 ]);
 
 /**

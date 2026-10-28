@@ -567,6 +567,58 @@ export const transferencia = pgTable(
   ],
 );
 
+/**
+ * Dispositivos que reciben las notificaciones push de reposicion (HU-18).
+ *
+ * Una fila por navegador suscripto: es lo que devuelve `PushSubscription` en el
+ * Frontend (`endpoint` + las dos claves con las que se cifra el mensaje). Sin
+ * fila no hay push, asi que silenciar las notificaciones es borrarla; no hay
+ * una preferencia aparte en ningun otro lado.
+ *
+ * `endpoint` es unico y no `(usuario, endpoint)`: identifica al navegador, no
+ * a la persona. Si en un mismo celular se loguea otro usuario y se suscribe,
+ * la fila se reasigna a el; si fueran dos filas, el celular recibiria los
+ * avisos de los dos comercios.
+ *
+ * `cascade` hacia `comercio` y `user`, a diferencia de `movimiento`: esto no es
+ * historia, y una suscripcion de alguien que ya no existe solo serviria para
+ * mandarle avisos a un dispositivo que nadie va a leer.
+ */
+export const suscripcionPush = pgTable(
+  "suscripcion_push",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    comercioId: uuid("comercio_id")
+      .notNull()
+      .references(() => comercio.id, { onDelete: "cascade" }),
+    // text y no uuid: los ids de Better Auth son text (ver la tabla `user`).
+    usuarioId: text("usuario_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    // text y no varchar: las URLs de los servicios de push no tienen un largo
+    // maximo documentado, y cortarla la dejaria inservible.
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    userAgent: varchar("user_agent", { length: 255 }),
+    // `expirationTime` de la suscripcion, si el navegador lo informa. Casi
+    // siempre viene null: el vencimiento real se entera recien al enviar
+    // (404/410), y ahi la fila se borra.
+    expiraEn: timestamp("expira_en"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("suscripcion_push_endpoint_uidx").on(table.endpoint),
+    // Para "a quien le aviso" cuando un producto del comercio cruza el umbral.
+    index("suscripcion_push_comercioId_idx").on(table.comercioId),
+    index("suscripcion_push_usuarioId_idx").on(table.usuarioId),
+  ],
+);
+
 /* ---------------------------------------------------------------------------
  * Relaciones
  * ------------------------------------------------------------------------- */

@@ -187,7 +187,7 @@ router.get(
  *                     properties:
  *                       id: { type: string, format: uuid }
  *                       fecha: { type: string, format: date-time, example: "2026-10-12T14:03:00.000Z" }
- *                       cantidad: { type: integer, example: 24, description: Unidades compradas, siempre positiva }
+ *                       cantidad: { type: integer, example: 24, description: "Unidades compradas, siempre positiva" }
  *                       motivo: { type: string, nullable: true }
  *                       producto:
  *                         type: object

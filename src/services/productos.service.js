@@ -545,10 +545,11 @@ export async function actualizarUmbral(comercioId, idCrudo, datosCrudos = {}) {
       throw new ErrorDeNegocio("El producto no existe", 404);
     }
 
+    // `productoId` y no `id`: asi se llama el campo en CAMPOS_UMBRAL.
     // Sin `movimientoId`: esta alerta no la disparo ningun movimiento.
     await evaluarAlertaDeStock(tx, {
       comercioId,
-      productoId: actualizado.id,
+      productoId: actualizado.productoId,
     });
 
     return actualizado;

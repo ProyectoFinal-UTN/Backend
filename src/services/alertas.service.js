@@ -14,6 +14,11 @@ import { alerta, producto, stock } from "../db/schema.js";
  *
  * El `comercioId` llega primero y sale siempre de la sesion, nunca del body.
  *
+ * El listado que consume el dashboard esta en alertasActivas.service.js, y no
+ * aca, para no armar un ciclo de imports: `movimientos.service.js` importa
+ * este modulo, y el listado necesita los lectores de paginacion de
+ * `movimientos.service.js`.
+ *
  * ---------------------------------------------------------------------------
  * LIMITACION CONOCIDA: las alertas se evaluan cuando pasa algo, no en segundo
  * plano.

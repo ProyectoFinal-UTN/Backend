@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { producto, stock, ubicacion } from "../db/schema.js";
 import { ErrorDeNegocio, PG_UNIQUE_VIOLATION, esUuid } from "../lib/errores.js";
+import { evaluarAlertaDeStock } from "./alertas.service.js";
 import { aplicarMovimiento } from "./movimientos.service.js";
 import { buscarEnOpenFoodFacts } from "./productosExternos.service.js";
 
@@ -507,6 +508,14 @@ export async function obtenerUmbral(comercioId, idCrudo) {
  * ignora (editar el resto del producto es `PUT /api/productos/:id`). El
  * filtro por comercio va en el mismo UPDATE, asi que un producto ajeno no se
  * modifica nunca: no hay una lectura previa que pueda quedar desfasada.
+ *
+ * Va en transaccion por la alerta de HU-17: mover stock no es el unico evento
+ * que pone a un producto en falta, cambiar el umbral tambien. Subirlo por
+ * encima del stock actual abre la alerta y bajarlo por debajo la cierra, con
+ * el mismo evaluador que usa `aplicarMovimiento` y en la misma transaccion que
+ * el UPDATE —si la evaluacion falla, el umbral no queda cambiado a medias—.
+ * Sin esto, configurar los umbrales despues de cargar el inventario dejaria el
+ * dashboard vacio hasta el primer movimiento de cada producto.
  */
 export async function actualizarUmbral(comercioId, idCrudo, datosCrudos = {}) {
   if (!esUuid(idCrudo)) {
@@ -519,23 +528,31 @@ export async function actualizarUmbral(comercioId, idCrudo, datosCrudos = {}) {
 
   const umbralMinimo = validarUmbralMinimo(datosCrudos.umbralMinimo);
 
-  const [actualizado] = await db
-    .update(producto)
-    .set({ umbralMinimo })
-    .where(
-      and(
-        eq(producto.id, idCrudo),
-        eq(producto.comercioId, comercioId),
-        eq(producto.activo, true),
-      ),
-    )
-    .returning(CAMPOS_UMBRAL);
+  return db.transaction(async (tx) => {
+    const [actualizado] = await tx
+      .update(producto)
+      .set({ umbralMinimo })
+      .where(
+        and(
+          eq(producto.id, idCrudo),
+          eq(producto.comercioId, comercioId),
+          eq(producto.activo, true),
+        ),
+      )
+      .returning(CAMPOS_UMBRAL);
 
-  if (!actualizado) {
-    throw new ErrorDeNegocio("El producto no existe", 404);
-  }
+    if (!actualizado) {
+      throw new ErrorDeNegocio("El producto no existe", 404);
+    }
 
-  return actualizado;
+    // Sin `movimientoId`: esta alerta no la disparo ningun movimiento.
+    await evaluarAlertaDeStock(tx, {
+      comercioId,
+      productoId: actualizado.id,
+    });
+
+    return actualizado;
+  });
 }
 
 /**

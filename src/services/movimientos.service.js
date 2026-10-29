@@ -10,6 +10,7 @@ import {
 } from "../db/schema.js";
 import { ErrorDeNegocio, esUuid } from "../lib/errores.js";
 import { puede } from "../lib/permissions.js";
+import { evaluarAlertaDeStock } from "./alertas.service.js";
 import { exigirProveedorDelComercio } from "./proveedores.service.js";
 import { programarAvisoDeReposicion } from "./push.service.js";
 
@@ -280,6 +281,12 @@ export async function resolverUbicacion(tx, comercioId, ubicacionId) {
  * stock inicial) y, cuando exista, cada pata de la transferencia de HU-12.
  *
  * `cantidad` ya viene con signo: entrada +, salida -.
+ *
+ * Por ser el unico escritor de stock es tambien el lugar donde se evalua la
+ * alerta de reposicion (HU-17), como ultimo paso y en la misma transaccion:
+ * asi los tres caminos quedan cubiertos sin repetir la deteccion en cada uno.
+ * `evaluarAlerta` existe para la transferencia de HU-12, que aplica dos
+ * movimientos seguidos y solo tiene que evaluar despues del segundo.
  */
 export async function aplicarMovimiento(
   tx,
@@ -293,6 +300,7 @@ export async function aplicarMovimiento(
     motivo = null,
     proveedorId = null,
     transferenciaId = null,
+    evaluarAlerta = true,
   },
 ) {
   // El FOR UPDATE bloquea la fila de stock hasta el fin de la transaccion. Sin
@@ -373,7 +381,19 @@ export async function aplicarMovimiento(
       cantidad: stock.cantidad,
     });
 
-  return { movimiento: movimientoCreado, stock: stockActualizado };
+  // Ultimo paso, con el stock ya escrito y todavia dentro de la transaccion:
+  // la alerta lee el saldo que esta misma transaccion acaba de dejar. Si esto
+  // falla, el movimiento se revierte con ella; no lleva try/catch propio a
+  // proposito.
+  const alerta = evaluarAlerta
+    ? await evaluarAlertaDeStock(tx, {
+        comercioId,
+        productoId,
+        movimientoId: movimientoCreado.id,
+      })
+    : null;
+
+  return { movimiento: movimientoCreado, stock: stockActualizado, alerta };
 }
 
 /**

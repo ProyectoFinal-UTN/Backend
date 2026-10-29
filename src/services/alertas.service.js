@@ -54,7 +54,8 @@ export function hayQueReponer({ enStock, umbralMinimo }) {
 }
 
 /**
- * Stock total del comercio y umbral de un producto, dentro de la transaccion.
+ * Stock total del comercio y umbral de un producto, dentro de la transaccion,
+ * tomando el candado de la fila de `producto`.
  *
  * Suma todas las ubicaciones y no mira la fila de `stock` que se acaba de
  * tocar: tener el umbral cubierto entre el deposito y el salon significa que no
@@ -65,21 +66,60 @@ export function hayQueReponer({ enStock, umbralMinimo }) {
  * Corre con el `tx` y no con `db`, asi que ve la escritura de stock que esa
  * misma transaccion acaba de hacer y todavia no commiteo.
  *
+ * EL `FOR UPDATE` SOBRE `producto` ES LO QUE SERIALIZA LAS EVALUACIONES.
+ *
+ * El FOR UPDATE de `aplicarMovimiento` bloquea la fila de `stock`, que es por
+ * `(producto, ubicacion)`: dos movimientos del mismo producto en ubicaciones
+ * distintas no se cruzan ahi. Sin este candado, una salida que abre la alerta
+ * y una entrada que la tendria que cerrar corren a la par, y la entrada no ve
+ * la fila que la salida acaba de insertar y todavia no commiteo: su
+ * `UPDATE ... WHERE estado = 'activa'` no matchea nada, no se bloquea contra
+ * nada, y la alerta queda activa para siempre aunque el stock haya vuelto a
+ * estar por encima del umbral. El panel mostraria un faltante que no existe
+ * hasta el proximo movimiento de ese producto. El indice unico parcial no
+ * cubre este caso: protege de dos alertas, no de una que no se cierra.
+ *
+ * Con el candado, la segunda transaccion espera a que la primera commitee y
+ * recien ahi lee el total, que ya es el definitivo.
+ *
+ * Tres detalles de por que la query quedo asi y no como un `leftJoin` con
+ * `groupBy`:
+ *
+ * - Postgres no acepta `FOR UPDATE` junto con `GROUP BY` ni con agregados, asi
+ *   que la suma va como subconsulta escalar, que es otro nivel de query.
+ * - Con `producto` sola en el `FROM`, el candado es solo sobre `producto`. Un
+ *   join con `stock` bloquearia tambien sus filas, y ahi si habria deadlock:
+ *   los movimientos toman `stock` y despues `producto`, mientras que
+ *   `actualizarUmbral` toma `producto` primero. Tomando siempre `stock` y
+ *   despues `producto`, el orden es global y no hay inversion posible.
+ * - La subconsulta se arma con el query builder y no con un `sql` a mano: en
+ *   un template, Drizzle emite las columnas SIN calificar, asi que
+ *   `${stock.productoId} = ${producto.id}` sale como
+ *   `"producto_id" = "id"` y adentro del subselect las dos resuelven contra
+ *   `stock`. La correlacion con el producto de afuera se pierde, la suma da
+ *   siempre 0 y toda la logica queda al reves sin un solo error.
+ *
  * Un producto inactivo (borrado logico de HU-9) devuelve `null`: no se le
  * generan alertas nuevas.
  */
 async function leerSituacion(tx, comercioId, productoId) {
+  const totalEnStock = tx
+    .select({ total: sql`coalesce(sum(${stock.cantidad}), 0)` })
+    .from(stock)
+    .where(
+      and(
+        eq(stock.productoId, producto.id),
+        eq(stock.comercioId, comercioId),
+      ),
+    );
+
   const [fila] = await tx
     .select({
       nombre: producto.nombre,
       umbralMinimo: producto.umbralMinimo,
-      enStock: sql`coalesce(sum(${stock.cantidad}), 0)`.mapWith(Number),
+      enStock: sql`(${totalEnStock})`.mapWith(Number),
     })
     .from(producto)
-    .leftJoin(
-      stock,
-      and(eq(stock.productoId, producto.id), eq(stock.comercioId, comercioId)),
-    )
     .where(
       and(
         eq(producto.id, productoId),
@@ -87,7 +127,8 @@ async function leerSituacion(tx, comercioId, productoId) {
         eq(producto.activo, true),
       ),
     )
-    .groupBy(producto.id, producto.nombre, producto.umbralMinimo);
+    .for("update")
+    .limit(1);
 
   return fila ?? null;
 }

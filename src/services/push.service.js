@@ -312,16 +312,28 @@ async function enviarA(comercioId, suscripcion, aviso) {
  * alertas y el aviso no puede salir dos veces. Era justo el limite que esta
  * funcion tenia documentado antes de HU-17.
  *
- * Tampoco hace falta chequear el signo del movimiento ni releer el stock: una
- * entrada que no deja el producto en falta no genera alerta, y la alerta ya
- * trae el nombre, el stock y el umbral con los que nacio.
+ * Tampoco hace falta releer el stock: la alerta ya trae el nombre, el stock y
+ * el umbral con los que nacio.
+ *
+ * Lo que si se sigue mirando es el signo del movimiento, igual que antes de
+ * HU-17: una entrada no avisa. La alerta se crea igual —el faltante existe y
+ * el panel lo tiene que mostrar—, pero mandarle un push que dice "reponer" a
+ * quien esta registrando una compra en ese mismo momento es avisarle de algo
+ * que acaba de hacer. El caso es alcanzable: un producto dado de alta con
+ * stock inicial 0 no genera alerta al crearse (`crearProducto` no llama a
+ * `aplicarMovimiento` si no hay stock), asi que la primera compra por debajo
+ * del umbral es la que la abre.
+ *
+ * El criterio es de HU-18 y por eso vive aca y no en el evaluador de alertas:
+ * es una decision sobre cuando molestar al usuario, no sobre cuando algo esta
+ * en falta.
  *
  * @returns {Promise<{enviado: number, borrada: number, fallido: number}>}
  */
-export async function avisarSiCruzoElUmbral(comercioId, alerta) {
+export async function avisarSiCruzoElUmbral(comercioId, alerta, movimiento) {
   const resultado = { enviado: 0, borrada: 0, fallido: 0 };
 
-  if (!pushHabilitado() || !alerta?.nueva) {
+  if (!pushHabilitado() || !alerta?.nueva || !(movimiento?.cantidad < 0)) {
     return resultado;
   }
 
@@ -348,13 +360,13 @@ const avisosPendientes = new Set();
  * Dispara el aviso de reposicion sin esperarlo (criterio 1 de HU-18).
  *
  * Es lo unico que llama `registrarMovimiento`, despues del commit, con la
- * alerta que dejo la transaccion. No devuelve nada y no puede tirar: el
- * movimiento ya esta guardado y la respuesta al usuario no tiene por que
- * depender de que el servicio de push conteste.
+ * alerta que dejo la transaccion y el movimiento que la origino. No devuelve
+ * nada y no puede tirar: el movimiento ya esta guardado y la respuesta al
+ * usuario no tiene por que depender de que el servicio de push conteste.
  */
-export function programarAvisoDeReposicion(comercioId, alerta) {
+export function programarAvisoDeReposicion(comercioId, alerta, movimiento) {
   const aviso = Promise.resolve()
-    .then(() => avisarSiCruzoElUmbral(comercioId, alerta))
+    .then(() => avisarSiCruzoElUmbral(comercioId, alerta, movimiento))
     .catch((error) => {
       console.error("[push] fallo el aviso de reposicion:", error);
     })

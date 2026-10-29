@@ -317,6 +317,27 @@ describe("GET /api/alertas — cuándo se genera y cuándo no", () => {
     expect(await filasDe(producto.id)).toEqual([]);
   });
 
+  test("una compra que deja el producto por debajo del umbral sí abre la alerta", async () => {
+    // Stock inicial 0: el alta no registra movimiento, así que no hay alerta
+    // previa y la compra es la que la abre. El panel la tiene que mostrar —el
+    // faltante existe— aunque el push de HU-18 no avise por ser una entrada.
+    const producto = await crearProducto(tienda.cookie, {
+      nombre: "Comprado de menos",
+      umbralMinimo: 10,
+      stockActual: 0,
+    });
+
+    expect(alertaDe(await consultar(tienda.cookie), producto.id)).toBeUndefined();
+
+    await comprar(tienda.cookie, producto.id, 2, salonId);
+
+    const encontrada = alertaDe(await consultar(tienda.cookie), producto.id);
+
+    expect(encontrada).toBeDefined();
+    expect(encontrada.stockActual).toBe(2);
+    expect(encontrada.faltanteHastaElUmbral).toBe(8);
+  });
+
   test("un producto con umbral 0 nunca alerta, aunque se quede sin stock", async () => {
     const producto = await crearProducto(tienda.cookie, {
       nombre: "Bolsas de papel",

@@ -1,12 +1,6 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
-import {
-  comercio,
-  member,
-  producto,
-  stock,
-  suscripcionPush,
-} from "../db/schema.js";
+import { comercio, member, suscripcionPush } from "../db/schema.js";
 import { ErrorDeNegocio } from "../lib/errores.js";
 import { puede } from "../lib/permissions.js";
 import { clavePublica, enviarPush, pushHabilitado } from "../lib/push.js";
@@ -19,9 +13,15 @@ import { clavePublica, enviarPush, pushHabilitado } from "../lib/push.js";
  * - Las suscripciones: cada navegador que acepta notificaciones manda su
  *   `PushSubscription` y se guarda en `suscripcion_push`. Silenciar es borrarla
  *   (criterio 2 de la historia): no hay otra preferencia que mantener.
- * - El aviso: despues de que un movimiento se confirma, si el stock del
- *   producto cruzo su umbral minimo hacia abajo, se le manda un push a cada
- *   suscripcion del comercio (criterio 1).
+ * - El aviso: cuando un movimiento hace nacer una alerta de reposicion
+ *   (HU-17), se le manda un push a cada suscripcion del comercio (criterio 1).
+ *
+ * Desde HU-17 este modulo ya no detecta el cruce de umbral: lo hace
+ * `evaluarAlertaDeStock` dentro de la transaccion del movimiento, y aca solo
+ * llega el resultado. El anti-duplicado —no repetir el aviso de un producto
+ * que ya estaba en falta— pasa a ser el indice unico parcial de la tabla
+ * `alerta`, que es lo que arregla el duplicado bajo concurrencia que esta
+ * misma funcion tenia documentado.
  *
  * El aviso nunca puede romper ni demorar el registro del movimiento: corre
  * despues del commit, sin que la respuesta lo espere, y todo error queda en la
@@ -223,23 +223,6 @@ export async function eliminarSuscripcion(usuarioId, datosCrudos) {
  * ------------------------------------------------------------------------- */
 
 /**
- * Si un movimiento hizo que el producto cruce su umbral hacia abajo.
- *
- * Cruzar es pasar de estar por encima a quedar en el umbral o por debajo. Si
- * ya estaba por debajo, no se repite el aviso: cada venta de un producto que ya
- * hay que reponer seria un push nuevo diciendo lo mismo. Umbral 0 es "sin
- * umbral configurado" (HU-16), y ahi no se avisa nunca.
- *
- * El criterio de "hay que reponer" (`stock <= umbral`) es el mismo que usa el
- * asistente en `productosParaReponer`.
- */
-export function cruzoElUmbral({ stockAntes, stockDespues, umbralMinimo }) {
-  return (
-    umbralMinimo > 0 && stockAntes > umbralMinimo && stockDespues <= umbralMinimo
-  );
-}
-
-/**
  * Contenido del push. Es el contrato con el service worker del Frontend, que
  * lo lee para mostrar la notificacion y abrir el producto al tocarla.
  */
@@ -257,37 +240,6 @@ export function armarAvisoDeReposicion({
     stockActual,
     umbralMinimo,
   };
-}
-
-/**
- * Stock total y umbral de un producto, ya confirmado el movimiento.
- *
- * Total del comercio sumando todas las ubicaciones, igual que
- * `productosParaReponer` (asistente.consultas.service.js): tener el umbral
- * cubierto entre el deposito y el salon significa que no hay que comprar.
- */
-async function leerStockDelProducto(comercioId, productoId) {
-  const [fila] = await db
-    .select({
-      nombre: producto.nombre,
-      umbralMinimo: producto.umbralMinimo,
-      enStock: sql`coalesce(sum(${stock.cantidad}), 0)`.mapWith(Number),
-    })
-    .from(producto)
-    .leftJoin(
-      stock,
-      and(eq(stock.productoId, producto.id), eq(stock.comercioId, comercioId)),
-    )
-    .where(
-      and(
-        eq(producto.id, productoId),
-        eq(producto.comercioId, comercioId),
-        eq(producto.activo, true),
-      ),
-    )
-    .groupBy(producto.id, producto.nombre, producto.umbralMinimo);
-
-  return fila ?? null;
 }
 
 /**
@@ -351,45 +303,29 @@ async function enviarA(comercioId, suscripcion, aviso) {
 }
 
 /**
- * Manda el push de reposicion si el movimiento hizo cruzar el umbral.
+ * Manda el push de reposicion si el movimiento abrio una alerta nueva.
  *
- * Se llama con el movimiento ya confirmado. El stock de antes se reconstruye
- * restando la cantidad del movimiento al total actual, en vez de leerlo antes
- * de la transaccion: asi `registrarMovimiento` no cambia en nada.
+ * Se llama con la alerta que devolvio la transaccion del movimiento (HU-17),
+ * ya commiteada. `alerta.nueva` es el evento "este producto acaba de entrar en
+ * falta": lo contesta el indice unico parcial de la tabla, no una comparacion,
+ * asi que dos ventas simultaneas del mismo producto no pueden hacer nacer dos
+ * alertas y el aviso no puede salir dos veces. Era justo el limite que esta
+ * funcion tenia documentado antes de HU-17.
  *
- * Limite conocido: si dos ventas del mismo producto se confirman en el mismo
- * instante, las dos pueden leer el total final y el aviso llegar dos veces.
- * El anti-duplicado de verdad es el que trae la tabla ALERTA de HU-17.
+ * Tampoco hace falta chequear el signo del movimiento ni releer el stock: una
+ * entrada que no deja el producto en falta no genera alerta, y la alerta ya
+ * trae el nombre, el stock y el umbral con los que nacio.
  *
  * @returns {Promise<{enviado: number, borrada: number, fallido: number}>}
  */
-export async function avisarSiCruzoElUmbral(comercioId, movimiento) {
+export async function avisarSiCruzoElUmbral(comercioId, alerta) {
   const resultado = { enviado: 0, borrada: 0, fallido: 0 };
 
-  // Una entrada no puede hacer bajar el stock: ni se consulta la base.
-  if (!pushHabilitado() || !(movimiento?.cantidad < 0)) {
+  if (!pushHabilitado() || !alerta?.nueva) {
     return resultado;
   }
 
-  const fila = await leerStockDelProducto(comercioId, movimiento.productoId);
-
-  if (
-    !fila ||
-    !cruzoElUmbral({
-      stockAntes: fila.enStock - movimiento.cantidad,
-      stockDespues: fila.enStock,
-      umbralMinimo: fila.umbralMinimo,
-    })
-  ) {
-    return resultado;
-  }
-
-  const aviso = armarAvisoDeReposicion({
-    productoId: movimiento.productoId,
-    nombre: fila.nombre,
-    stockActual: fila.enStock,
-    umbralMinimo: fila.umbralMinimo,
-  });
+  const aviso = armarAvisoDeReposicion(alerta);
 
   const suscripciones = await suscripcionesConPermiso(comercioId);
 
@@ -411,13 +347,14 @@ const avisosPendientes = new Set();
 /**
  * Dispara el aviso de reposicion sin esperarlo (criterio 1 de HU-18).
  *
- * Es lo unico que llama `registrarMovimiento`, despues del commit. No devuelve
- * nada y no puede tirar: el movimiento ya esta guardado y la respuesta al
- * usuario no tiene por que depender de que el servicio de push conteste.
+ * Es lo unico que llama `registrarMovimiento`, despues del commit, con la
+ * alerta que dejo la transaccion. No devuelve nada y no puede tirar: el
+ * movimiento ya esta guardado y la respuesta al usuario no tiene por que
+ * depender de que el servicio de push conteste.
  */
-export function programarAvisoDeReposicion(comercioId, movimiento) {
+export function programarAvisoDeReposicion(comercioId, alerta) {
   const aviso = Promise.resolve()
-    .then(() => avisarSiCruzoElUmbral(comercioId, movimiento))
+    .then(() => avisarSiCruzoElUmbral(comercioId, alerta))
     .catch((error) => {
       console.error("[push] fallo el aviso de reposicion:", error);
     })

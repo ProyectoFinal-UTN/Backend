@@ -441,7 +441,10 @@ export async function registrarMovimiento(
 
   // Push de reposicion (HU-18). Va despues del commit y sin await: si el
   // servicio de push falla o tarda, el movimiento ya quedo guardado igual.
-  programarAvisoDeReposicion(comercioId, registrado.movimiento);
+  // Desde HU-17 recibe la alerta que dejo la transaccion y no el movimiento:
+  // si la alerta es nueva hay que avisar, y si no, no. Esa es la superficie
+  // del evento para cualquier otro consumidor que se quiera colgar.
+  programarAvisoDeReposicion(comercioId, registrado.alerta);
 
   return registrado;
 }

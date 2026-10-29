@@ -9,6 +9,7 @@ import { auth } from "./lib/auth.js";
 import { auditarCambios } from "./middlewares/auditoria.middleware.js";
 import { bloquearOrganizacionDirecta } from "./middlewares/auth.middleware.js";
 import comerciosRoutes from "./routes/comercios.routes.js";
+import alertasRoutes from "./routes/alertas.routes.js";
 import asistenteRoutes from "./routes/asistente.routes.js";
 import auditoriaRoutes from "./routes/auditoria.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
@@ -313,6 +314,7 @@ app.use("/api/productos", productosRoutes);
 app.use("/api/proveedores", proveedoresRoutes);
 app.use("/api/movimientos", movimientosRoutes);
 app.use("/api/transferencias", transferenciasRoutes);
+app.use("/api/alertas", alertasRoutes);
 app.use("/api/asistente", asistenteRoutes);
 app.use("/api/push", pushRoutes);
 

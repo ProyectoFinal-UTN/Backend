@@ -213,6 +213,12 @@ export async function transferirStock(comercioId, usuarioId, datosCrudos = {}) {
     // `proveedorId` no se pasa en ninguna de las dos patas: una transferencia
     // es un movimiento interno, no hay contraparte externa a quien atribuirle
     // la mercaderia. `aplicarMovimiento` lo deja en null solo.
+    // `evaluarAlerta: false` en esta pata y no en la otra (HU-17): una
+    // transferencia no cambia el stock total del comercio, que es contra lo
+    // que se compara el umbral. Evaluando despues de la salida, el total esta
+    // momentaneamente bajo —la mercaderia ya salio del origen y todavia no
+    // entro al destino— y se crearia una alerta que la entrada resolveria un
+    // renglon despues, dejando un activa -> resuelta que nunca existio.
     const salida = await aplicarMovimiento(tx, {
       comercioId,
       productoId,
@@ -222,6 +228,7 @@ export async function transferirStock(comercioId, usuarioId, datosCrudos = {}) {
       cantidad: -datos.cantidad,
       motivo: datos.motivo,
       transferenciaId: cabecera.id,
+      evaluarAlerta: false,
     });
 
     const entrada = await aplicarMovimiento(tx, {

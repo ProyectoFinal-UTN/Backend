@@ -493,6 +493,13 @@ export const movimiento = pgTable(
     index("movimiento_ubicacionId_idx").on(table.ubicacionId),
     // Para el filtro por rango de fechas del historial (HU-14).
     index("movimiento_fecha_idx").on(table.fecha),
+    // Para el historial de compras de un proveedor (HU-21): el filtro es
+    // siempre proveedor + rango de fecha, y el orden tambien es por fecha, asi
+    // que el compuesto sirve para los tres pasos de una sola pasada. Sin el, la
+    // query escanea el libro entero: `proveedor_id` no tenia ningun indice.
+    // Sin `DESC` en la definicion: Postgres recorre un btree para atras sin
+    // costo extra. De paso le da indice al chequeo del `restrict` de la FK.
+    index("movimiento_proveedor_fecha_idx").on(table.proveedorId, table.fecha),
     // Para traer las dos patas de una transferencia sin escanear el libro
     // entero (HU-12).
     index("movimiento_transferenciaId_idx").on(table.transferenciaId),
@@ -619,6 +626,83 @@ export const suscripcionPush = pgTable(
   ],
 );
 
+/**
+ * Estados de una alerta de reposicion (HU-17).
+ *
+ * Los dos del ciclo de vida que fija references/data-model.md: activa ->
+ * resuelta. No hay un tercero ("descartada" a mano): la alerta la abre y la
+ * cierra el stock, no una persona.
+ */
+export const estadoAlerta = pgEnum("estado_alerta", ["activa", "resuelta"]);
+
+/**
+ * Alertas de reposicion: productos que llegaron a su umbral minimo (HU-17).
+ *
+ * Una fila nace dentro de la MISMA transaccion que actualiza `stock` (ver
+ * `evaluarAlertaDeStock` en services/alertas.service.js, llamado desde
+ * `aplicarMovimiento`), y se marca `resuelta` en esa misma transaccion cuando
+ * un movimiento posterior deja el saldo por encima del umbral. El dashboard
+ * lee las activas; las resueltas quedan como historia.
+ *
+ * Es por PRODUCTO y no por `(producto, ubicacion)` como `stock`: el umbral es
+ * un campo de `producto` y la comparacion se hace contra el saldo total del
+ * comercio, el mismo criterio que ya usan `productosParaReponer` (E5) y el
+ * push de HU-18 —tener el umbral cubierto entre el deposito y el salon
+ * significa que no hay que comprar—. El desglose por ubicacion lo arma el
+ * listado leyendo `stock`, no se guarda aca.
+ *
+ * `stock_al_generar` y `umbral_al_generar` son una foto del momento, no el
+ * dato vigente: si despues cambia el umbral se puede ver con que valores nacio
+ * la alerta. El listado devuelve los dos, el de la foto y el vivo.
+ *
+ * `cascade` en las tres FK, a diferencia de `movimiento`: esto no es el libro.
+ * Una alerta de un producto borrado, o de un movimiento que ya no esta, no
+ * tiene nada que decir. En `movimiento_id` ademas evita que una alerta bloquee
+ * un borrado ajeno (un `restrict` ahi romperia los teardowns de otros tests).
+ */
+export const alerta = pgTable(
+  "alerta",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    comercioId: uuid("comercio_id")
+      .notNull()
+      .references(() => comercio.id, { onDelete: "cascade" }),
+    productoId: uuid("producto_id")
+      .notNull()
+      .references(() => producto.id, { onDelete: "cascade" }),
+    // Que movimiento la disparo, para poder reconstruir por que salto.
+    // Nullable: una alerta tambien puede nacer de configurar el umbral de un
+    // producto que ya estaba bajo de stock (HU-16), sin ningun movimiento.
+    movimientoId: uuid("movimiento_id").references(() => movimiento.id, {
+      onDelete: "cascade",
+    }),
+    estado: estadoAlerta("estado").default("activa").notNull(),
+    stockAlGenerar: integer("stock_al_generar").notNull(),
+    umbralAlGenerar: integer("umbral_al_generar").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    resueltaEn: timestamp("resuelta_en"),
+  },
+  (table) => [
+    // EL anti-duplicado, y la razon por la que no hay un "select si ya existe"
+    // antes de insertar. Dos movimientos simultaneos del mismo producto no se
+    // bloquean entre si —el FOR UPDATE de `aplicarMovimiento` es sobre la fila
+    // de `stock`, no sobre esta tabla—, asi que los dos leerian "no hay alerta
+    // activa" y los dos insertarian. Esto lo impide Postgres al escribir.
+    //
+    // Parcial: la unicidad vale solo entre las activas. Sin el `where`, un
+    // producto no podria volver a alertar nunca despues de su primera alerta
+    // resuelta. `producto_id` solo alcanza: un producto es de un solo comercio.
+    uniqueIndex("alerta_producto_activa_uidx")
+      .on(table.productoId)
+      .where(sql`${table.estado} = 'activa'`),
+    // El WHERE del listado del dashboard: las activas de un comercio.
+    index("alerta_comercio_estado_idx").on(table.comercioId, table.estado),
+    index("alerta_productoId_idx").on(table.productoId),
+    // Le da indice al chequeo del cascade de la FK hacia `movimiento`.
+    index("alerta_movimientoId_idx").on(table.movimientoId),
+  ],
+);
+
 /* ---------------------------------------------------------------------------
  * Relaciones
  * ------------------------------------------------------------------------- */
@@ -675,6 +759,7 @@ export const comercioRelations = relations(comercio, ({ many, one }) => ({
   productos: many(producto),
   proveedores: many(proveedor),
   movimientos: many(movimiento),
+  alertas: many(alerta),
 }));
 
 export const proveedorRelations = relations(proveedor, ({ one, many }) => ({
@@ -717,6 +802,7 @@ export const productoRelations = relations(producto, ({ one, many }) => ({
   stocks: many(stock),
   movimientos: many(movimiento),
   proveedores: many(productoProveedor),
+  alertas: many(alerta),
 }));
 
 export const stockRelations = relations(stock, ({ one }) => ({
@@ -752,6 +838,21 @@ export const movimientoRelations = relations(movimiento, ({ one }) => ({
   proveedor: one(proveedor, {
     fields: [movimiento.proveedorId],
     references: [proveedor.id],
+  }),
+}));
+
+export const alertaRelations = relations(alerta, ({ one }) => ({
+  comercio: one(comercio, {
+    fields: [alerta.comercioId],
+    references: [comercio.id],
+  }),
+  producto: one(producto, {
+    fields: [alerta.productoId],
+    references: [producto.id],
+  }),
+  movimiento: one(movimiento, {
+    fields: [alerta.movimientoId],
+    references: [movimiento.id],
   }),
 }));
 

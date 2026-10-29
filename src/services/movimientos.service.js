@@ -10,6 +10,7 @@ import {
 } from "../db/schema.js";
 import { ErrorDeNegocio, esUuid } from "../lib/errores.js";
 import { puede } from "../lib/permissions.js";
+import { evaluarAlertaDeStock } from "./alertas.service.js";
 import { exigirProveedorDelComercio } from "./proveedores.service.js";
 import { programarAvisoDeReposicion } from "./push.service.js";
 
@@ -280,6 +281,12 @@ export async function resolverUbicacion(tx, comercioId, ubicacionId) {
  * stock inicial) y, cuando exista, cada pata de la transferencia de HU-12.
  *
  * `cantidad` ya viene con signo: entrada +, salida -.
+ *
+ * Por ser el unico escritor de stock es tambien el lugar donde se evalua la
+ * alerta de reposicion (HU-17), como ultimo paso y en la misma transaccion:
+ * asi los tres caminos quedan cubiertos sin repetir la deteccion en cada uno.
+ * `evaluarAlerta` existe para la transferencia de HU-12, que aplica dos
+ * movimientos seguidos y solo tiene que evaluar despues del segundo.
  */
 export async function aplicarMovimiento(
   tx,
@@ -293,6 +300,7 @@ export async function aplicarMovimiento(
     motivo = null,
     proveedorId = null,
     transferenciaId = null,
+    evaluarAlerta = true,
   },
 ) {
   // El FOR UPDATE bloquea la fila de stock hasta el fin de la transaccion. Sin
@@ -373,7 +381,19 @@ export async function aplicarMovimiento(
       cantidad: stock.cantidad,
     });
 
-  return { movimiento: movimientoCreado, stock: stockActualizado };
+  // Ultimo paso, con el stock ya escrito y todavia dentro de la transaccion:
+  // la alerta lee el saldo que esta misma transaccion acaba de dejar. Si esto
+  // falla, el movimiento se revierte con ella; no lleva try/catch propio a
+  // proposito.
+  const alerta = evaluarAlerta
+    ? await evaluarAlertaDeStock(tx, {
+        comercioId,
+        productoId,
+        movimientoId: movimientoCreado.id,
+      })
+    : null;
+
+  return { movimiento: movimientoCreado, stock: stockActualizado, alerta };
 }
 
 /**
@@ -421,7 +441,15 @@ export async function registrarMovimiento(
 
   // Push de reposicion (HU-18). Va despues del commit y sin await: si el
   // servicio de push falla o tarda, el movimiento ya quedo guardado igual.
-  programarAvisoDeReposicion(comercioId, registrado.movimiento);
+  // Desde HU-17 recibe tambien la alerta que dejo la transaccion: si es nueva
+  // hay que avisar, y si no, no. Esa es la superficie del evento para
+  // cualquier otro consumidor que se quiera colgar. El movimiento sigue yendo
+  // porque la regla "una entrada no avisa" es de HU-18 y vive alla.
+  programarAvisoDeReposicion(
+    comercioId,
+    registrado.alerta,
+    registrado.movimiento,
+  );
 
   return registrado;
 }
@@ -436,8 +464,14 @@ export async function registrarMovimiento(
  */
 const TIPOS_DEL_HISTORIAL = tipoMovimiento.enumValues;
 
-const LIMITE_HISTORIAL_POR_DEFECTO = 50;
-const LIMITE_HISTORIAL_MAXIMO = 200;
+/**
+ * Exportados (como `leerInstante` y `leerEnteroPositivo`) para que el historial
+ * de compras por proveedor (HU-21) valide su periodo y su paginacion con las
+ * mismas reglas y los mismos mensajes que este, en vez de con una copia que se
+ * vaya separando con el tiempo.
+ */
+export const LIMITE_HISTORIAL_POR_DEFECTO = 50;
+export const LIMITE_HISTORIAL_MAXIMO = 200;
 
 /**
  * Fecha y hora ISO 8601 con zona explicita (`Z` u offset).
@@ -450,7 +484,7 @@ const LIMITE_HISTORIAL_MAXIMO = 200;
 const FORMATO_INSTANTE =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 
-function leerInstante(valor, nombre) {
+export function leerInstante(valor, nombre) {
   if (valor === undefined || valor === null || valor === "") {
     return undefined;
   }
@@ -490,7 +524,7 @@ function leerUuidOpcional(valor, nombre) {
   return valor;
 }
 
-function leerEnteroPositivo(valor, porDefecto, nombre) {
+export function leerEnteroPositivo(valor, porDefecto, nombre) {
   if (valor === undefined || valor === null || valor === "") {
     return porDefecto;
   }

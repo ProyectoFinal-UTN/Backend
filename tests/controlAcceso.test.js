@@ -13,6 +13,7 @@ import {
 } from "../src/db/schema.js";
 import { permisosDe } from "../src/lib/permissions.js";
 import { SIN_PERMISO } from "../src/middlewares/auth.middleware.js";
+import alertasRoutes from "../src/routes/alertas.routes.js";
 import asistenteRoutes from "../src/routes/asistente.routes.js";
 import auditoriaRoutes from "../src/routes/auditoria.routes.js";
 import comerciosRoutes from "../src/routes/comercios.routes.js";
@@ -96,9 +97,18 @@ const MATRIZ = [
   ["POST", `/api/productos/${ID_FALSO}/proveedores`, [P, G]],
   ["DELETE", `/api/productos/${ID_FALSO}/proveedores/${ID_FALSO}`, [P, G]],
   ["GET", `/api/proveedores/${ID_FALSO}/productos`, [P, G, E]],
+  // HU-21. El historial de compras de un proveedor pide `movimiento:read`, que
+  // es el dato que devuelve: los tres roles ya pueden leer el libro, y el
+  // empleado llega a las mismas filas con
+  // `GET /api/movimientos?tipo=compra&proveedorId=...` (HU-14).
+  ["GET", `/api/proveedores/${ID_FALSO}/historial-compras`, [P, G, E]],
   ["GET", "/api/movimientos", [P, G, E]],
   ["POST", "/api/movimientos", [P, G, E]],
   ["POST", "/api/transferencias", [P, G, E]],
+  // HU-17. El panel de alertas lo ven los tres roles: es `alerta: read`, el
+  // mismo permiso con el que HU-18 decide a quien le manda el push. El
+  // empleado es quien atiende el mostrador y ve el faltante.
+  ["GET", "/api/alertas", [P, G, E]],
   // HU-26. La matriz manda el cuerpo vacio: la pregunta se valida antes de
   // hablar con el modelo y corta en 400, asi que este test prueba la puerta
   // sin llamar nunca al LLM ni gastar el credito compartido del Gateway.
@@ -150,6 +160,7 @@ const MONTAJES = new Map([
   [proveedoresRoutes, "/api/proveedores"],
   [movimientosRoutes, "/api/movimientos"],
   [transferenciasRoutes, "/api/transferencias"],
+  [alertasRoutes, "/api/alertas"],
   [asistenteRoutes, "/api/asistente"],
   [pushRoutes, "/api/push"],
 ]);

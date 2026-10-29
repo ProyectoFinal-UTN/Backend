@@ -1,15 +1,19 @@
 import { describe, expect, test } from "@jest/globals";
 import {
   armarAvisoDeReposicion,
-  cruzoElUmbral,
   validarBaja,
   validarSuscripcion,
 } from "../src/services/push.service.js";
 
 /**
- * Unitario puro de HU-18 (SCRUM-127): la regla de cuando se avisa, el
- * contenido del push y la validacion de la suscripcion. No toca la base ni
- * manda nada; el envio de punta a punta esta en `tests/push.test.js`.
+ * Unitario puro de HU-18 (SCRUM-127): el contenido del push y la validacion
+ * de la suscripcion. No toca la base ni manda nada; el envio de punta a punta
+ * esta en `tests/push.test.js`.
+ *
+ * La regla de CUANDO se avisa ya no esta aca: HU-17 la movio a
+ * `hayQueReponer` (alertas.service.js), que es la unica comparacion contra el
+ * umbral de todo el flujo, y se testea en `tests/alertas.service.test.js`.
+ * Este modulo ya no decide nada sobre el stock: recibe la alerta y la manda.
  */
 
 const ENDPOINT = "https://fcm.googleapis.com/fcm/send/abc123";
@@ -25,50 +29,6 @@ function suscripcion(overrides = {}) {
     ...overrides,
   };
 }
-
-describe("cruzoElUmbral — cuándo se manda el aviso", () => {
-  test("pasar de arriba del umbral a debajo avisa", () => {
-    expect(
-      cruzoElUmbral({ stockAntes: 14, stockDespues: 3, umbralMinimo: 10 }),
-    ).toBe(true);
-  });
-
-  test("quedar justo en el umbral avisa: llegar al mínimo ya es reponer", () => {
-    expect(
-      cruzoElUmbral({ stockAntes: 12, stockDespues: 10, umbralMinimo: 10 }),
-    ).toBe(true);
-  });
-
-  test("bajar pero quedar por encima no avisa", () => {
-    expect(
-      cruzoElUmbral({ stockAntes: 20, stockDespues: 15, umbralMinimo: 10 }),
-    ).toBe(false);
-  });
-
-  test("si ya estaba por debajo no se repite", () => {
-    expect(
-      cruzoElUmbral({ stockAntes: 8, stockDespues: 7, umbralMinimo: 10 }),
-    ).toBe(false);
-  });
-
-  test("si ya estaba justo en el umbral tampoco se repite", () => {
-    expect(
-      cruzoElUmbral({ stockAntes: 10, stockDespues: 4, umbralMinimo: 10 }),
-    ).toBe(false);
-  });
-
-  test("sin umbral configurado (0) no avisa nunca, aunque se quede sin stock", () => {
-    expect(
-      cruzoElUmbral({ stockAntes: 5, stockDespues: 0, umbralMinimo: 0 }),
-    ).toBe(false);
-  });
-
-  test("una entrada no avisa", () => {
-    expect(
-      cruzoElUmbral({ stockAntes: 3, stockDespues: 30, umbralMinimo: 10 }),
-    ).toBe(false);
-  });
-});
 
 describe("armarAvisoDeReposicion — contenido del push", () => {
   test("arma el payload del contrato con el Frontend", () => {

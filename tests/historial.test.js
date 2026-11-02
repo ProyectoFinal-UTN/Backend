@@ -110,6 +110,17 @@ let depositoId;
 let proveedorX;
 let proveedorY;
 
+/**
+ * El fixture arma dos comercios, cuatro productos y una docena de
+ * movimientos: son decenas de viajes a Neon, dos de ellos con el bcrypt de 12
+ * rondas del registro. Venia justo contra los 30 s de `testTimeout` de
+ * jest.config.js, y desde HU-17 cada movimiento suma la evaluacion de la
+ * alerta dentro de su transaccion, que lo termino de pasar. Este hook lleva su
+ * propio timeout, igual que el de tests/comprasProveedor.test.js, en vez de
+ * subir el global para todos los demas archivos.
+ */
+const TIMEOUT_FIXTURE = 120000;
+
 beforeAll(async () => {
   comercioA = await registrarComercio("a");
   comercioB = await registrarComercio("b");
@@ -201,7 +212,7 @@ beforeAll(async () => {
     proveedorId: libro.proveedorDeB,
   });
   libro.productoDeB = deB.id;
-});
+}, TIMEOUT_FIXTURE);
 
 afterAll(async () => {
   const patron = `%-${SUFIJO}@test.local`;

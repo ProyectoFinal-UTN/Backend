@@ -367,8 +367,14 @@ describe("Disparo del aviso al registrar un movimiento", () => {
     expect(enviarPush).not.toHaveBeenCalled();
   });
 
-  test("una compra no avisa", async () => {
-    const producto = await crearProducto(tienda.cookie, { umbralMinimo: 10, stockActual: 2 });
+  // `stockActual: 0` y no 2: con stock inicial el alta ya deja la alerta
+  // creada (HU-17), y entonces la compra no avisaria por estar repitiendo una
+  // alerta vieja, no por ser una entrada — el test pasaria sin probar nada.
+  // Arrancando en 0 no hay alerta previa (`crearProducto` no registra
+  // movimiento si no hay stock), asi que esta compra es la que la abre, y lo
+  // unico que frena el push es que sea una entrada.
+  test("una compra no avisa, ni siquiera cuando es la que abre la alerta", async () => {
+    const producto = await crearProducto(tienda.cookie, { umbralMinimo: 10, stockActual: 0 });
 
     const respuesta = await registrarMovimiento(tienda.cookie, {
       productoId: producto.id,

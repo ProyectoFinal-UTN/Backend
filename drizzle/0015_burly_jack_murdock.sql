@@ -1,0 +1,1 @@
+CREATE INDEX "movimiento_proveedor_fecha_idx" ON "movimiento" USING btree ("proveedor_id","fecha");

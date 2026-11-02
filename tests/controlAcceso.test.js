@@ -96,6 +96,11 @@ const MATRIZ = [
   ["POST", `/api/productos/${ID_FALSO}/proveedores`, [P, G]],
   ["DELETE", `/api/productos/${ID_FALSO}/proveedores/${ID_FALSO}`, [P, G]],
   ["GET", `/api/proveedores/${ID_FALSO}/productos`, [P, G, E]],
+  // HU-21. El historial de compras de un proveedor pide `movimiento:read`, que
+  // es el dato que devuelve: los tres roles ya pueden leer el libro, y el
+  // empleado llega a las mismas filas con
+  // `GET /api/movimientos?tipo=compra&proveedorId=...` (HU-14).
+  ["GET", `/api/proveedores/${ID_FALSO}/historial-compras`, [P, G, E]],
   ["GET", "/api/movimientos", [P, G, E]],
   ["POST", "/api/movimientos", [P, G, E]],
   ["POST", "/api/transferencias", [P, G, E]],

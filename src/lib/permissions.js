@@ -54,6 +54,11 @@ export const statements = {
   // conviene reponer— es una lectura de gestión, y la historia la escribe el
   // propietario. Con una sola acción no se podía dar una cosa sin la otra.
   asistente: ["consultar", "recomendaciones"],
+  // El dashboard de KPIs (HU-22) tampoco tiene tabla propia: lee stock,
+  // movimientos y proveedores. Lleva su permiso por lo mismo que el asistente:
+  // para decidir quién ve los indicadores del negocio sin tocar quién opera
+  // cada pantalla.
+  kpi: ["read"],
 };
 
 export const ac = createAccessControl(statements);
@@ -84,6 +89,7 @@ export const propietario = ac.newRole({
   auditoria: ["read"],
   cuenta: ["read", "delete"],
   asistente: ["consultar", "recomendaciones"],
+  kpi: ["read"],
 });
 
 /**
@@ -114,6 +120,10 @@ export const gerente = ac.newRole({
   // negocio, que es justo lo que este rol hace. Lo que no tiene es la
   // auditoría ni la gestión de usuarios, que son administración.
   asistente: ["consultar", "recomendaciones"],
+  // Los KPIs de HU-22 también, por el mismo motivo que las recomendaciones:
+  // la historia la escribe el propietario, pero mirar la rotación y las
+  // compras por proveedor para decidir qué pedir es operar el negocio.
+  kpi: ["read"],
 });
 
 /**
@@ -140,6 +150,11 @@ export const empleado = ac.newRole({
   // gestión de HU-27: son una lectura del negocio, no una herramienta para
   // atender el mostrador.
   asistente: ["consultar"],
+  // Sin KPIs (HU-22): son indicadores de gestión —rotación, compras por
+  // proveedor— para "tomar decisiones" sobre el negocio, igual que las
+  // recomendaciones de HU-27. Para atender el mostrador ya tiene el stock de
+  // cada producto y las alertas de reposición.
+  kpi: [],
 });
 
 export const roles = { propietario, gerente, empleado };

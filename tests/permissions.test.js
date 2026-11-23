@@ -161,4 +161,13 @@ describe("Matriz de permisos", () => {
       false,
     );
   });
+
+  test("los KPIs del dashboard los ven el propietario y el gerente, no el empleado (HU-22)", () => {
+    expect(propietario.authorize({ kpi: ["read"] }).success).toBe(true);
+    expect(gerente.authorize({ kpi: ["read"] }).success).toBe(true);
+    // Si alguien se los da al empleado, este test y la fila de
+    // controlAcceso.test.js tienen que cambiar juntos, a la vista en el PR.
+    expect(empleado.authorize({ kpi: ["read"] }).success).toBe(false);
+    expect(permisosDe("empleado")).not.toHaveProperty("kpi");
+  });
 });

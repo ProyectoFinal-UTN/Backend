@@ -15,6 +15,7 @@ import auditoriaRoutes from "./routes/auditoria.routes.js";
 import configuracionRoutes from "./routes/configuracion.routes.js";
 import datosPersonalesRoutes from "./routes/datosPersonales.routes.js";
 import invitacionesRoutes from "./routes/invitaciones.routes.js";
+import kpisRoutes from "./routes/kpis.routes.js";
 import miembrosRoutes from "./routes/miembros.routes.js";
 import movimientosRoutes from "./routes/movimientos.routes.js";
 import productosRoutes from "./routes/productos.routes.js";
@@ -315,6 +316,7 @@ app.use("/api/proveedores", proveedoresRoutes);
 app.use("/api/movimientos", movimientosRoutes);
 app.use("/api/transferencias", transferenciasRoutes);
 app.use("/api/alertas", alertasRoutes);
+app.use("/api/kpis", kpisRoutes);
 app.use("/api/asistente", asistenteRoutes);
 app.use("/api/push", pushRoutes);
 

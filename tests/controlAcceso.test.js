@@ -20,6 +20,7 @@ import comerciosRoutes from "../src/routes/comercios.routes.js";
 import configuracionRoutes from "../src/routes/configuracion.routes.js";
 import datosPersonalesRoutes from "../src/routes/datosPersonales.routes.js";
 import invitacionesRoutes from "../src/routes/invitaciones.routes.js";
+import kpisRoutes from "../src/routes/kpis.routes.js";
 import miembrosRoutes from "../src/routes/miembros.routes.js";
 import movimientosRoutes from "../src/routes/movimientos.routes.js";
 import productosRoutes from "../src/routes/productos.routes.js";
@@ -109,6 +110,9 @@ const MATRIZ = [
   // mismo permiso con el que HU-18 decide a quien le manda el push. El
   // empleado es quien atiende el mostrador y ve el faltante.
   ["GET", "/api/alertas", [P, G, E]],
+  // HU-22. Los KPIs son indicadores de gestion, como las recomendaciones de
+  // HU-27: el empleado no los ve.
+  ["GET", "/api/kpis", [P, G]],
   // HU-26. La matriz manda el cuerpo vacio: la pregunta se valida antes de
   // hablar con el modelo y corta en 400, asi que este test prueba la puerta
   // sin llamar nunca al LLM ni gastar el credito compartido del Gateway.
@@ -161,6 +165,7 @@ const MONTAJES = new Map([
   [movimientosRoutes, "/api/movimientos"],
   [transferenciasRoutes, "/api/transferencias"],
   [alertasRoutes, "/api/alertas"],
+  [kpisRoutes, "/api/kpis"],
   [asistenteRoutes, "/api/asistente"],
   [pushRoutes, "/api/push"],
 ]);

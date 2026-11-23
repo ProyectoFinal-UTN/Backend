@@ -500,6 +500,17 @@ export const movimiento = pgTable(
     // Sin `DESC` en la definicion: Postgres recorre un btree para atras sin
     // costo extra. De paso le da indice al chequeo del `restrict` de la FK.
     index("movimiento_proveedor_fecha_idx").on(table.proveedorId, table.fecha),
+    // Para los KPIs del dashboard (HU-22): las ventas y las compras de un
+    // comercio en una ventana de dias. Las tres columnas son exactamente el
+    // filtro (`comercio_id = ? AND tipo = ? AND fecha >= ?`), asi que la
+    // lectura es un rango del indice y no un recorrido de todo el libro del
+    // comercio, que es en lo que termina combinar `movimiento_comercioId_idx`
+    // con `movimiento_fecha_idx` a medida que el libro crece (RNF2).
+    index("movimiento_comercio_tipo_fecha_idx").on(
+      table.comercioId,
+      table.tipo,
+      table.fecha,
+    ),
     // Para traer las dos patas de una transferencia sin escanear el libro
     // entero (HU-12).
     index("movimiento_transferenciaId_idx").on(table.transferenciaId),

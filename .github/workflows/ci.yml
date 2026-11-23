@@ -1,0 +1,90 @@
+# Integracion continua del Backend (T-17).
+#
+# Corre lint y la suite completa de Jest en cada PR hacia dev o main, y en cada
+# push a esas ramas (o sea, despues de cada merge). El check "Backend / Lint y
+# tests" es el que pide la proteccion de rama para poder mergear.
+#
+# Los tests de integracion necesitan una base de verdad. Aca se usa un Postgres
+# descartable que vive lo que dura el job: NUNCA Neon, que es compartida.
+#
+# Ningun test llama al LLM: tests/jest.setup.js deja las keys vacias, y aca
+# tampoco se define ninguna. El credito del AI Gateway no se toca desde CI.
+name: Backend
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+
+# Un push nuevo al mismo PR cancela la corrida anterior, que ya quedo vieja.
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Lint y tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      # Con SSL, como Neon: el test de HU-31 ("la conexion a la base exige TLS")
+      # mira que la URL pida sslmode. `uselibpqcompat` hace que `require` cifre
+      # sin verificar el certificado, que aca es autofirmado.
+      DATABASE_URL: postgres://postgres:ci@localhost:5432/ci?sslmode=require&uselibpqcompat=true
+      # Solo firma las sesiones de los tests, en una base que se tira al
+      # terminar. No es un secreto de ningun entorno real.
+      BETTER_AUTH_SECRET: secreto-de-ci-solo-para-firmar-sesiones-de-prueba
+      BETTER_AUTH_URL: http://localhost:4000
+      TRUSTED_ORIGINS: http://localhost:5173
+      FRONTEND_URL: http://localhost:5173
+      # Sin Resend: el backend escribe el correo en la consola en vez de mandarlo.
+      RESEND_API_KEY: ""
+      LLM_API_KEY: ""
+      AI_GATEWAY_API_KEY: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Con `docker run` y no como `services:` del job: los services no aceptan
+      # argumentos para el servidor, y sin `-c ssl=on` no hay SSL. El
+      # certificado "snakeoil" ya viene en la imagen oficial de Postgres.
+      - name: Levantar Postgres con SSL
+        run: |
+          docker run -d --name postgres \
+            -e POSTGRES_PASSWORD=ci -e POSTGRES_DB=ci -p 5432:5432 \
+            postgres:17 \
+            -c ssl=on \
+            -c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem \
+            -c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Esperar a Postgres
+        run: |
+          for i in $(seq 1 30); do
+            docker exec postgres pg_isready -U postgres -d ci && exit 0
+            sleep 1
+          done
+          docker logs postgres
+          exit 1
+
+      # Las mismas migraciones que se aplican en Neon: si una no corre sobre una
+      # base vacia, el PR se entera aca y no en el deploy.
+      - name: Migraciones
+        run: npx drizzle-kit migrate
+
+      - name: Tests
+        run: npm test

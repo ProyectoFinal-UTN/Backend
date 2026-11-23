@@ -29,11 +29,12 @@ git checkout -b chore/nombre-descriptivo
 - Se abren siempre hacia `dev`, nunca hacia `main`.
 - Se asigna a **otro integrante** como reviewer — nadie aprueba su propio PR.
 - El review confirma, como mínimo, lo que pide la Definition of Done (ver `references/definition-of-done.md`): capas respetadas, filtro por `comercio_id`, validación de rol, tests en verde.
+- **El CI tiene que estar en verde para mergear** (T-17): GitHub Actions corre lint y tests (y el build, en Frontend) en cada PR, y la protección de `dev` y `main` no deja mergear con el check en rojo. Si falla, se arregla en la misma branch; no se mergea "porque en mi máquina anda". Los workflows viven en `.github/workflows/` de cada repo y no usan Neon ni el LLM.
 - Después de mergear, la branch se borra (GitHub lo ofrece con un botón al cerrar el PR).
 
 ## Promoción `dev` → `main`
 
-La gestiona la persona a cargo de testing del Sprint, una vez que los tests de integración —que viven en el repo `Infraestructura`, corriendo contra el stack completo levantado con Docker Compose— pasan sobre el estado combinado de `dev` en los tres repos. Nadie promueve a `main` sin ese paso, aunque el propio código funcione en aislado.
+La gestiona la persona a cargo de testing del Sprint, una vez que los tests de integración —que viven en el repo `Infraestructura`, corriendo contra el stack completo levantado con Docker Compose— pasan sobre el estado combinado de `dev` en los tres repos. Ese paso lo corre el CI: el workflow `E2E` de `Infraestructura` se ejecuta en el PR de promoción (y todas las noches sobre `dev`), así que el PR `dev` → `main` de Infraestructura no se puede mergear con la suite en rojo. Nadie promueve a `main` sin ese paso, aunque el propio código funcione en aislado.
 
 ## Commits
 

@@ -170,4 +170,13 @@ describe("Matriz de permisos", () => {
     expect(empleado.authorize({ kpi: ["read"] }).success).toBe(false);
     expect(permisosDe("empleado")).not.toHaveProperty("kpi");
   });
+
+  test("propietario y gerente generan reportes PDF, el empleado no (HU-25)", () => {
+    expect(propietario.authorize({ reporte: ["generar"] }).success).toBe(true);
+    expect(gerente.authorize({ reporte: ["generar"] }).success).toBe(true);
+    expect(empleado.authorize({ reporte: ["generar"] }).success).toBe(false);
+    // Sin el permiso, el Frontend no recibe el recurso y esconde el botón.
+    expect(permisosDe("empleado")).not.toHaveProperty("reporte");
+    expect(permisosDe("gerente").reporte).toEqual(["generar"]);
+  });
 });

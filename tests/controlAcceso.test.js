@@ -26,6 +26,7 @@ import movimientosRoutes from "../src/routes/movimientos.routes.js";
 import productosRoutes from "../src/routes/productos.routes.js";
 import proveedoresRoutes from "../src/routes/proveedores.routes.js";
 import pushRoutes from "../src/routes/push.routes.js";
+import reportesRoutes from "../src/routes/reportes.routes.js";
 import transferenciasRoutes from "../src/routes/transferencias.routes.js";
 import ubicacionesRoutes from "../src/routes/ubicaciones.routes.js";
 
@@ -133,6 +134,10 @@ const MATRIZ = [
   ["GET", "/api/push/clave-publica", [P, G, E]],
   ["POST", "/api/push/suscripciones", [P, G, E]],
   ["DELETE", "/api/push/suscripciones", [P, G, E]],
+  // HU-25. Exportar el libro en PDF es gestión (`reporte: generar`): el
+  // empleado lee el historial para operar, pero no saca reportes. Sin query,
+  // el rol autorizado corta en 400 antes de leer la base.
+  ["GET", "/api/reportes/movimientos", [P, G]],
   ["GET", "/api/mis-datos", [P, G, E]],
 ];
 
@@ -168,6 +173,7 @@ const MONTAJES = new Map([
   [kpisRoutes, "/api/kpis"],
   [asistenteRoutes, "/api/asistente"],
   [pushRoutes, "/api/push"],
+  [reportesRoutes, "/api/reportes"],
 ]);
 
 /**

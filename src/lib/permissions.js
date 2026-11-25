@@ -40,6 +40,11 @@ export const statements = {
   transferencia: ["create"],
   alerta: ["read", "update"],
   auditoria: ["read"],
+  // Reportes exportables en PDF (HU-25). Recurso propio y no
+  // `movimiento: ["read"]`: el empleado lee el historial para operar, pero
+  // sacar el libro del comercio en un archivo para archivarlo o compartirlo es
+  // una tarea de gestión, y la historia la escribe el gerente.
+  reporte: ["generar"],
   // Los datos de la propia persona (HU-31): descargarlos y darse de baja. Los
   // tienen los tres roles, pero pasan por la matriz igual que el resto para que
   // "todo endpoint valida el rol" (HU-32) no tenga excepciones que recordar.
@@ -87,6 +92,7 @@ export const propietario = ac.newRole({
   transferencia: ["create"],
   alerta: ["read", "update"],
   auditoria: ["read"],
+  reporte: ["generar"],
   cuenta: ["read", "delete"],
   asistente: ["consultar", "recomendaciones"],
   kpi: ["read"],
@@ -114,6 +120,8 @@ export const gerente = ac.newRole({
   transferencia: ["create"],
   alerta: ["read", "update"],
   auditoria: [],
+  // HU-25: "como gerente, quiero exportar reportes de movimientos en PDF".
+  reporte: ["generar"],
   cuenta: ["read", "delete"],
   // Las recomendaciones de HU-27 sí, aunque la historia diga "como
   // propietario": decidir qué reponer y qué no se está moviendo es operar el
@@ -145,6 +153,8 @@ export const empleado = ac.newRole({
   transferencia: ["create"],
   alerta: ["read"],
   auditoria: [],
+  // Ve el historial (HU-14) pero no exporta reportes (HU-25): es gestión.
+  reporte: [],
   cuenta: ["read", "delete"],
   // Puede preguntarle al asistente, pero no recibe las recomendaciones de
   // gestión de HU-27: son una lectura del negocio, no una herramienta para

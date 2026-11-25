@@ -119,8 +119,11 @@ export function validarFiltrosCompras(query = {}) {
  * existe: decir "existe pero no es tuyo" filtraria informacion de otro
  * comercio. Un id que no es UUID tambien es 404 y no un 500 por el 22P02 de
  * Postgres.
+ *
+ * Exportada: el reporte PDF por proveedor (HU-25) resuelve al proveedor con
+ * esta misma regla, y tiene que devolver el mismo 404.
  */
-async function exigirProveedorDelHistorial(comercioId, proveedorIdCrudo) {
+export async function exigirProveedorDelHistorial(comercioId, proveedorIdCrudo) {
   if (!esUuid(proveedorIdCrudo)) {
     throw new ErrorDeNegocio("El proveedor no existe", 404);
   }

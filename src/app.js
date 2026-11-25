@@ -20,6 +20,7 @@ import movimientosRoutes from "./routes/movimientos.routes.js";
 import productosRoutes from "./routes/productos.routes.js";
 import proveedoresRoutes from "./routes/proveedores.routes.js";
 import pushRoutes from "./routes/push.routes.js";
+import reportesRoutes from "./routes/reportes.routes.js";
 import transferenciasRoutes from "./routes/transferencias.routes.js";
 import ubicacionesRoutes from "./routes/ubicaciones.routes.js";
 
@@ -58,7 +59,17 @@ app.use(
 
 // `credentials: true` es obligatorio: la sesion de Better Auth viaja en cookie,
 // y sin esto el navegador no la manda desde el Frontend.
-app.use(cors({ origin: origenesPermitidos, credentials: true }));
+//
+// `exposedHeaders`: el Frontend vive en otro origen, y el navegador solo le
+// deja leer por JS un punado de headers "simples". Sin esto, la descarga de un
+// reporte PDF (HU-25) no puede leer el nombre del archivo.
+app.use(
+  cors({
+    origin: origenesPermitidos,
+    credentials: true,
+    exposedHeaders: ["Content-Disposition"],
+  }),
+);
 
 /**
  * @openapi
@@ -317,6 +328,7 @@ app.use("/api/transferencias", transferenciasRoutes);
 app.use("/api/alertas", alertasRoutes);
 app.use("/api/asistente", asistenteRoutes);
 app.use("/api/push", pushRoutes);
+app.use("/api/reportes", reportesRoutes);
 
 // Manejador de errores: cierra la cadena para que un throw en un service no
 // deje la request colgada. Va siempre ultimo.

@@ -14,8 +14,11 @@ import {
   user,
 } from "../src/db/schema.js";
 import {
+  ALCANCE_STOCK_ACTUAL,
+  DIAS_MAXIMOS_RANGO,
   DIAS_POR_DEFECTO,
   LIMITE_MAS_VENDIDOS,
+  diaEnZona,
   limpiarCacheDeKpis,
   ventanaDeDias,
 } from "../src/services/kpis.service.js";
@@ -646,6 +649,38 @@ describe("GET /api/kpis — rendimiento (RNF2)", () => {
     );
     expect(respuesta.body.comprasPorProveedor.otros).not.toBeNull();
   });
+
+  test(`un rango historico tambien carga en menos de ${TOPE_DE_CARGA_MS} ms (HU-23)`, async () => {
+    // El rango absoluto es un camino nuevo: medirlo aparte, porque el test de
+    // arriba solo cubre la ventana movil por defecto. Un mes del medio de la
+    // historia, en frio, que es el peor caso del filtro de periodo.
+    limpiarCacheDeKpis();
+
+    const finMes = diaEnZona(haceDias(60));
+    const inicioMes = diaEnZona(haceDias(89));
+
+    const inicio = performance.now();
+    const respuesta = await consultar(comercioGrande.cookie, {
+      desde: `${inicioMes}T00:00:00.000-03:00`,
+      hasta: `${finMes}T23:59:59.000-03:00`,
+    });
+    const duracion = performance.now() - inicio;
+
+    expect(respuesta.status).toBe(200);
+    expect(duracion).toBeLessThan(TOPE_DE_CARGA_MS);
+
+    // Y que el recorte haya hecho algo: el periodo es un mes de los seis que
+    // tiene el libro, asi que tiene que ver menos ventas que la ventana entera.
+    expect(respuesta.body.periodo.dias).toBe(30);
+    expect(respuesta.body.rotacion.porDia).toHaveLength(30);
+    expect(respuesta.body.rotacion.ventas).toBeGreaterThan(0);
+
+    limpiarCacheDeKpis();
+    const completo = await consultar(comercioGrande.cookie, { dias: 90 });
+    expect(respuesta.body.rotacion.ventas).toBeLessThan(
+      completo.body.rotacion.ventas,
+    );
+  });
 });
 
 describe("GET /api/kpis — cache", () => {
@@ -689,5 +724,467 @@ describe("GET /api/kpis — cache", () => {
 
     const despues = await consultar(comercioA.cookie);
     expect(despues.body.stock.bajoUmbral).toBe(2);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+ * HU-23 — filtro de periodo
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Un comercio con el libro repartido en dos dias concretos, para poder pedir un
+ * periodo cerrado y saber de memoria que tiene que dar.
+ *
+ * Tiene su propio comercio y no reusa el A a proposito: el ultimo test de la
+ * cache de HU-22 le cambia un umbral, asi que depender de A ataria estos tests
+ * al orden en que corren. El `beforeAll` es chico —un producto, dos proveedores,
+ * cinco movimientos— asi que no toca el presupuesto del fixture grande.
+ *
+ *   dia         movimientos                                   ventas  compras
+ *   DIA_VIEJO   venta 5 a las 00:00:00.000 (borde de abajo)
+ *               venta 3 a las 23:59:59.000 (borde de arriba)
+ *               compra 20 de Proveedor Viejo a las 10:00      2 / 8   1 / 20
+ *   DIA_MEDIO   venta 2 a las 12:00
+ *               compra 7 de Proveedor Medio a las 10:00       1 / 2   1 / 7
+ *   HOY         venta 4                                       1 / 4   -
+ *
+ * Los dos bordes estan puestos justo en las 00:00 y en las 23:59:59 locales
+ * para que el test de los limites pruebe de verdad que el rango es inclusivo en
+ * los dos extremos.
+ *
+ * La venta de HOY esta para que la cota superior sea LOAD-BEARING: sin algo
+ * despues del rango, un `hasta` que no se aplica da el mismo numero y los tests
+ * pasan con el filtro roto.
+ */
+describe("GET /api/kpis — filtro de periodo (HU-23)", () => {
+  const DIAS_VIEJO = 10;
+  const DIAS_MEDIO = 5;
+
+  let comercioP;
+  const p = {};
+  let diaViejo;
+  let diaMedio;
+
+  beforeAll(async () => {
+    limpiarCacheDeKpis();
+
+    comercioP = await registrarComercio("periodo");
+    const { cookie } = comercioP;
+
+    p.proveedorViejo = await crearProveedor(cookie, "Proveedor Viejo");
+    p.proveedorMedio = await crearProveedor(cookie, "Proveedor Medio");
+    p.cafe = await crearProducto(cookie, "Café 500g", 100, 5);
+
+    const enPrincipal = { ubicacionId: p.cafe.stock.ubicacionId };
+
+    const ventaBordeBajo = await registrarMovimiento(cookie, {
+      productoId: p.cafe.id,
+      tipo: "venta",
+      cantidad: 5,
+      ...enPrincipal,
+    });
+    const ventaBordeAlto = await registrarMovimiento(cookie, {
+      productoId: p.cafe.id,
+      tipo: "venta",
+      cantidad: 3,
+      ...enPrincipal,
+    });
+    const ventaDelMedio = await registrarMovimiento(cookie, {
+      productoId: p.cafe.id,
+      tipo: "venta",
+      cantidad: 2,
+      ...enPrincipal,
+    });
+    const compraVieja = await registrarMovimiento(cookie, {
+      productoId: p.cafe.id,
+      tipo: "compra",
+      cantidad: 20,
+      proveedorId: p.proveedorViejo,
+      ...enPrincipal,
+    });
+    const compraDelMedio = await registrarMovimiento(cookie, {
+      productoId: p.cafe.id,
+      tipo: "compra",
+      cantidad: 7,
+      proveedorId: p.proveedorMedio,
+      ...enPrincipal,
+    });
+    // Esta queda con la fecha de hoy, DESPUES de los dos rangos del fixture.
+    await registrarMovimiento(cookie, {
+      productoId: p.cafe.id,
+      tipo: "venta",
+      cantidad: 4,
+      ...enPrincipal,
+    });
+
+    diaViejo = diaEnZona(haceDias(DIAS_VIEJO));
+    diaMedio = diaEnZona(haceDias(DIAS_MEDIO));
+
+    // La app nunca edita el libro: correr fechas es fixture, igual que arriba.
+    const correrA = (id, instante) =>
+      db.update(movimiento).set({ fecha: instante }).where(eq(movimiento.id, id));
+
+    await Promise.all([
+      correrA(ventaBordeBajo.id, new Date(`${diaViejo}T00:00:00.000-03:00`)),
+      correrA(ventaBordeAlto.id, new Date(`${diaViejo}T23:59:59.000-03:00`)),
+      correrA(compraVieja.id, new Date(`${diaViejo}T10:00:00.000-03:00`)),
+      correrA(ventaDelMedio.id, new Date(`${diaMedio}T12:00:00.000-03:00`)),
+      correrA(compraDelMedio.id, new Date(`${diaMedio}T10:00:00.000-03:00`)),
+    ]);
+  }, 120000);
+
+  /** El rango que cubre un dia calendario entero, como lo manda el Frontend. */
+  const diaEntero = (dia) => ({
+    desde: `${dia}T00:00:00.000-03:00`,
+    hasta: `${dia}T23:59:59.000-03:00`,
+  });
+
+  describe("recorta los indicadores al periodo", () => {
+    test("un dia cerrado devuelve solo lo de ese dia", async () => {
+      const { status, body } = await consultar(
+        comercioP.cookie,
+        diaEntero(diaViejo),
+      );
+
+      expect(status).toBe(200);
+      expect(body.periodo.dias).toBe(1);
+      expect(body.rotacion.ventas).toBe(2);
+      expect(body.rotacion.unidadesVendidas).toBe(8);
+      // `masVendidos` sale del CTE de ventas y NO pasa por la serie, asi que es
+      // lo que delata una cota superior que no se aplico: con la venta de hoy
+      // colandose, el cafe tendria 12 unidades y 3 ventas en vez de 8 y 2.
+      expect(body.rotacion.masVendidos).toHaveLength(1);
+      expect(body.rotacion.masVendidos[0].producto.nombre).toBe("Café 500g");
+      expect(body.rotacion.masVendidos[0].unidadesVendidas).toBe(8);
+      expect(body.rotacion.masVendidos[0].ventas).toBe(2);
+      expect(body.comprasPorProveedor.compras).toBe(1);
+      expect(body.comprasPorProveedor.unidades).toBe(20);
+      expect(body.comprasPorProveedor.proveedoresConCompras).toBe(1);
+      expect(body.comprasPorProveedor.proveedores[0].proveedor.nombre).toBe(
+        "Proveedor Viejo",
+      );
+    });
+
+    test("otro dia cerrado devuelve otra cosa", async () => {
+      const { body } = await consultar(
+        comercioP.cookie,
+        diaEntero(diaMedio),
+      );
+
+      expect(body.rotacion.ventas).toBe(1);
+      expect(body.rotacion.unidadesVendidas).toBe(2);
+      expect(body.rotacion.masVendidos[0].unidadesVendidas).toBe(2);
+      expect(body.comprasPorProveedor.unidades).toBe(7);
+      expect(body.comprasPorProveedor.proveedores[0].proveedor.nombre).toBe(
+        "Proveedor Medio",
+      );
+    });
+
+    test("un rango que abarca los dos dias suma los dos", async () => {
+      const { body } = await consultar(comercioP.cookie, {
+        desde: `${diaViejo}T00:00:00.000-03:00`,
+        hasta: `${diaMedio}T23:59:59.000-03:00`,
+      });
+
+      expect(body.periodo.dias).toBe(DIAS_VIEJO - DIAS_MEDIO + 1);
+      expect(body.rotacion.ventas).toBe(3);
+      expect(body.rotacion.unidadesVendidas).toBe(10);
+      expect(body.rotacion.masVendidos[0].unidadesVendidas).toBe(10);
+      expect(body.comprasPorProveedor.compras).toBe(2);
+      expect(body.comprasPorProveedor.unidades).toBe(27);
+      expect(body.comprasPorProveedor.proveedoresConCompras).toBe(2);
+    });
+
+    test("la serie `porDia` tiene una barra por dia del periodo", async () => {
+      const { body } = await consultar(comercioP.cookie, {
+        desde: `${diaViejo}T00:00:00.000-03:00`,
+        hasta: `${diaMedio}T23:59:59.000-03:00`,
+      });
+
+      const dias = DIAS_VIEJO - DIAS_MEDIO + 1;
+      expect(body.rotacion.porDia).toHaveLength(dias);
+      expect(body.rotacion.porDia[0]).toEqual({
+        fecha: diaViejo,
+        ventas: 2,
+        unidades: 8,
+      });
+      expect(body.rotacion.porDia.at(-1)).toEqual({
+        fecha: diaMedio,
+        ventas: 1,
+        unidades: 2,
+      });
+      // Los dias del medio no tuvieron nada y vienen en 0, no faltando.
+      expect(body.rotacion.porDia.slice(1, -1).every((d) => d.ventas === 0)).toBe(
+        true,
+      );
+      // La suma de la serie ES el total del periodo.
+      expect(
+        body.rotacion.porDia.reduce((suma, d) => suma + d.unidades, 0),
+      ).toBe(body.rotacion.unidadesVendidas);
+    });
+  });
+
+  describe("limites del periodo", () => {
+    test("el primer y el ultimo instante del dia entran los dos", async () => {
+      const { body } = await consultar(
+        comercioP.cookie,
+        diaEntero(diaViejo),
+      );
+
+      // La de las 00:00:00.000 son 5 unidades y la de las 23:59:59 son 3: si
+      // alguno de los dos bordes fuera exclusivo, esto daria 3 o 5, no 8.
+      expect(body.rotacion.unidadesVendidas).toBe(8);
+    });
+
+    test("el dia anterior no ve nada del dia siguiente", async () => {
+      const anterior = diaEnZona(haceDias(DIAS_VIEJO + 1));
+      const { body } = await consultar(comercioP.cookie, diaEntero(anterior));
+
+      expect(body.rotacion.ventas).toBe(0);
+      expect(body.comprasPorProveedor.compras).toBe(0);
+    });
+
+    test("un rango que corta a las 23:00 deja afuera la venta de las 23:59", async () => {
+      const { body } = await consultar(comercioP.cookie, {
+        desde: `${diaViejo}T00:00:00.000-03:00`,
+        hasta: `${diaViejo}T23:00:00.000-03:00`,
+      });
+
+      expect(body.rotacion.ventas).toBe(1);
+      expect(body.rotacion.unidadesVendidas).toBe(5);
+    });
+
+    test("los dias se cortan en Argentina y no en UTC", async () => {
+      // La venta de las 23:59:59 locales del DIA_VIEJO es, en UTC, del dia
+      // siguiente a las 02:59:59. Pedir el dia local completo la tiene que
+      // incluir igual: si el corte fuera en UTC, quedaria afuera.
+      const { body } = await consultar(
+        comercioP.cookie,
+        diaEntero(diaViejo),
+      );
+
+      expect(body.periodo.zonaHoraria).toBe("America/Argentina/Buenos_Aires");
+      expect(body.rotacion.porDia).toHaveLength(1);
+      expect(body.rotacion.porDia[0].fecha).toBe(diaViejo);
+      expect(body.rotacion.porDia[0].ventas).toBe(2);
+    });
+  });
+
+  describe("periodo sin datos", () => {
+    test("responde 200 con los indicadores en cero, no 404", async () => {
+      const vacio = diaEnZona(haceDias(60));
+      const { status, body } = await consultar(
+        comercioP.cookie,
+        diaEntero(vacio),
+      );
+
+      expect(status).toBe(200);
+      expect(body.rotacion.ventas).toBe(0);
+      expect(body.rotacion.unidadesVendidas).toBe(0);
+      expect(body.rotacion.masVendidos).toEqual([]);
+      expect(body.comprasPorProveedor.compras).toBe(0);
+      expect(body.comprasPorProveedor.unidades).toBe(0);
+      expect(body.comprasPorProveedor.proveedores).toEqual([]);
+      expect(body.comprasPorProveedor.otros).toBeNull();
+      expect(body.comprasPorProveedor.sinProveedor).toBeNull();
+      // La serie viene completa en 0, para que el grafico no quede sin eje.
+      expect(body.rotacion.porDia).toEqual([
+        { fecha: vacio, ventas: 0, unidades: 0 },
+      ]);
+    });
+
+    test("el stock sigue estando, porque no depende del periodo", async () => {
+      const { body } = await consultar(
+        comercioP.cookie,
+        diaEntero(diaEnZona(haceDias(60))),
+      );
+
+      expect(body.stock.productos).toBe(1);
+      expect(body.stock.unidades).toBeGreaterThan(0);
+    });
+  });
+
+  describe("el stock es el de ahora, no el del periodo", () => {
+    test("no cambia entre dos periodos distintos y lo dice en `alcance`", async () => {
+      const viejo = await consultar(comercioP.cookie, diaEntero(diaViejo));
+      const medio = await consultar(comercioP.cookie, diaEntero(diaMedio));
+
+      expect(viejo.body.stock.alcance).toBe(ALCANCE_STOCK_ACTUAL);
+      expect(viejo.body.stock.alcance).toBe("actual");
+      // La rotacion si cambio, asi que no es que devolvio lo mismo entero.
+      expect(viejo.body.rotacion.unidadesVendidas).not.toBe(
+        medio.body.rotacion.unidadesVendidas,
+      );
+      expect(medio.body.stock.unidades).toBe(viejo.body.stock.unidades);
+      expect(medio.body.stock.productos).toBe(viejo.body.stock.productos);
+    });
+  });
+
+  describe("aislamiento por comercio", () => {
+    test("el mismo rango en dos comercios no se cruza", async () => {
+      const mio = await consultar(comercioP.cookie, diaEntero(diaViejo));
+      const ajeno = await consultar(comercioB.cookie, diaEntero(diaViejo));
+
+      expect(mio.body.rotacion.unidadesVendidas).toBe(8);
+      // El comercio B tiene su propia actividad, pero toda de hoy.
+      expect(ajeno.body.rotacion.ventas).toBe(0);
+      expect(ajeno.body.comprasPorProveedor.compras).toBe(0);
+    });
+
+    test("un comercioId en la query string no cambia de comercio", async () => {
+      const { body } = await consultar(comercioP.cookie, {
+        ...diaEntero(diaViejo),
+        comercioId: "00000000-0000-0000-0000-000000000000",
+      });
+
+      expect(body.rotacion.unidadesVendidas).toBe(8);
+      expect(body.stock.productos).toBe(1);
+    });
+  });
+
+  describe("la cache no sirve el periodo anterior", () => {
+    test("pedir un periodo y despues otro devuelve numeros distintos", async () => {
+      // Este es el test del bug que la clave de cache de HU-22 tendria sin el
+      // periodo: la primera llamada deja el DIA_VIEJO guardado y la segunda,
+      // mismo comercio y misma cantidad de dias, tendria que recalcular.
+      const viejo = await consultar(comercioP.cookie, diaEntero(diaViejo));
+      const medio = await consultar(comercioP.cookie, diaEntero(diaMedio));
+
+      expect(viejo.body.rotacion.unidadesVendidas).toBe(8);
+      expect(medio.body.rotacion.unidadesVendidas).toBe(2);
+      expect(medio.body.comprasPorProveedor.unidades).toBe(7);
+    });
+
+    test("y volver al primero lo devuelve igual que antes", async () => {
+      const primera = await consultar(comercioP.cookie, diaEntero(diaViejo));
+      await consultar(comercioP.cookie, diaEntero(diaMedio));
+      const otraVez = await consultar(comercioP.cookie, diaEntero(diaViejo));
+
+      expect(otraVez.body.rotacion.unidadesVendidas).toBe(
+        primera.body.rotacion.unidadesVendidas,
+      );
+    });
+
+    test("un rango no se confunde con la ventana movil del mismo largo", async () => {
+      const movil = await consultar(comercioP.cookie, { dias: 1 });
+      const unDia = await consultar(comercioP.cookie, diaEntero(diaViejo));
+
+      expect(movil.body.periodo.dias).toBe(unDia.body.periodo.dias);
+      // Un dia cada uno, pero dias distintos: hoy hubo una venta de 4 y en el
+      // DIA_VIEJO dos que suman 8.
+      expect(movil.body.rotacion.unidadesVendidas).toBe(4);
+      expect(unDia.body.rotacion.unidadesVendidas).toBe(8);
+    });
+
+    test("sin cambios, el mismo rango dos veces sale de la cache", async () => {
+      const primera = await consultar(comercioP.cookie, diaEntero(diaViejo));
+      const segunda = await consultar(comercioP.cookie, diaEntero(diaViejo));
+
+      expect(segunda.body.generadoEn).toBe(primera.body.generadoEn);
+    });
+  });
+
+  describe("validacion del rango", () => {
+    test("fechas invertidas son 400 con el mensaje de la API", async () => {
+      const { status, body } = await consultar(comercioP.cookie, {
+        desde: `${diaMedio}T00:00:00.000-03:00`,
+        hasta: `${diaViejo}T00:00:00.000-03:00`,
+      });
+
+      expect(status).toBe(400);
+      expect(body.error).toBe(
+        'La fecha "desde" no puede ser posterior a la fecha "hasta"',
+      );
+    });
+
+    test.each(["desde", "hasta"])(
+      "falta %s y el otro viene: 400",
+      async (nombre) => {
+        const { status, body } = await consultar(comercioP.cookie, {
+          [nombre]: `${diaViejo}T00:00:00.000-03:00`,
+        });
+
+        expect(status).toBe(400);
+        expect(body.error).toMatch(/necesita un rango de fechas/);
+      },
+    );
+
+    test("`dias` junto con el rango es 400", async () => {
+      const { status, body } = await consultar(comercioP.cookie, {
+        dias: "7",
+        ...diaEntero(diaViejo),
+      });
+
+      expect(status).toBe(400);
+      expect(body.error).toBe(
+        'Los parámetros "dias" y "desde"/"hasta" no se pueden combinar: el período se pide de una forma o de la otra',
+      );
+    });
+
+    test("una fecha sin zona horaria es 400", async () => {
+      const { status, body } = await consultar(comercioP.cookie, {
+        desde: `${diaViejo}T00:00:00`,
+        hasta: `${diaMedio}T23:59:59.000-03:00`,
+      });
+
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/ISO 8601 con zona/);
+    });
+
+    test(`un rango de mas de ${DIAS_MAXIMOS_RANGO} dias es 400`, async () => {
+      const { status, body } = await consultar(comercioP.cookie, {
+        desde: "2024-01-01T00:00:00.000-03:00",
+        hasta: "2026-01-01T00:00:00.000-03:00",
+      });
+
+      expect(status).toBe(400);
+      expect(body.error).toMatch(
+        new RegExp(`no puede abarcar más de ${DIAS_MAXIMOS_RANGO} días`),
+      );
+    });
+
+    test("un parametro repetido es 400 y no un 500", async () => {
+      // Express parsea `?desde=a&desde=b` como array: si `leerInstante` no
+      // chequeara el tipo, esto entraria a la query como objeto.
+      const { status, body } = await request(app)
+        .get(
+          `/api/kpis?desde=${diaViejo}T00:00:00.000-03:00&desde=${diaMedio}T00:00:00.000-03:00&hasta=${diaMedio}T23:59:59.000-03:00`,
+        )
+        .set("Cookie", comercioP.cookie);
+
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/ISO 8601 con zona/);
+    });
+
+    test("sin parametros sigue dando la ventana por defecto de HU-22", async () => {
+      const { status, body } = await consultar(comercioP.cookie);
+
+      expect(status).toBe(200);
+      expect(body.periodo.dias).toBe(DIAS_POR_DEFECTO);
+      // La ventana por defecto cubre los dos dias del fixture y el de hoy.
+      expect(body.rotacion.ventas).toBe(4);
+      expect(body.rotacion.unidadesVendidas).toBe(14);
+    });
+  });
+
+  describe("el rol sigue mandando", () => {
+    test("un rango no abre el endpoint sin sesion", async () => {
+      const { status } = await request(app)
+        .get("/api/kpis")
+        .query(diaEntero(diaViejo));
+
+      expect(status).toBe(401);
+    });
+  });
+
+  test("los extremos del rango vuelven en `periodo`, en UTC", async () => {
+    const rango = diaEntero(diaViejo);
+    const { body } = await consultar(comercioP.cookie, rango);
+
+    // Mismo instante, pero serializado con `Z`: el offset -03:00 que mando el
+    // cliente NO vuelve tal cual. Esta en la lista de trampas del contrato.
+    expect(body.periodo.desde).toBe(new Date(rango.desde).toISOString());
+    expect(body.periodo.hasta).toBe(new Date(rango.hasta).toISOString());
+    expect(body.periodo.desde).toMatch(/Z$/);
   });
 });

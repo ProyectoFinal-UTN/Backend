@@ -15,16 +15,41 @@ router.use(requireAuth);
  * @openapi
  * /api/kpis:
  *   get:
- *     summary: KPIs principales del dashboard (HU-22)
+ *     summary: KPIs principales del dashboard, filtrables por período (HU-22, HU-23)
  *     description: >
  *       Estado del stock, rotación de productos y compras por proveedor, en
  *       una sola respuesta para que el dashboard cargue con un único pedido.
  *
  *
- *       **Período.** `stock` es siempre el estado ACTUAL. `rotacion` y
- *       `comprasPorProveedor` son de los últimos `dias` días calendario, hoy
- *       incluido, cortados en la hora de Argentina
- *       (`periodo.zonaHoraria`).
+ *       **Período (HU-23).** Dos formas de pedirlo, y son EXCLUYENTES
+ *       (mandar las dos da 400):
+ *
+ *
+ *       1. `dias` — la ventana móvil que termina hoy. Es el default.
+ *
+ *       2. `desde` + `hasta` — un rango absoluto, con los DOS extremos
+ *       INCLUSIVE. Ambos o ninguno. Es la misma convención que
+ *       `GET /api/reportes` (HU-25), así que el cliente usa un solo helper de
+ *       rango para los dos endpoints.
+ *
+ *
+ *       Los presets de día, semana y mes los resuelve el Frontend a instantes
+ *       concretos; el backend no los conoce. Las fechas van en ISO 8601 con
+ *       zona explícita, porque dónde empieza y termina "el día" lo sabe el
+ *       cliente.
+ *
+ *
+ *       **`stock` NO sigue al período.** `rotacion` y `comprasPorProveedor` se
+ *       recalculan sobre el período, pero `stock` es siempre el estado de
+ *       AHORA, y lo dice en `stock.alcance`. El motivo es que la tabla `stock`
+ *       es la caché del saldo actual y no guarda su propia historia: un stock
+ *       histórico habría que reconstruirlo recorriendo el libro entero y no
+ *       entraría en los 2 s de RNF2. Lo mismo arrastra `diasDeCobertura`, que
+ *       cruza el stock de hoy con el ritmo de venta del período.
+ *
+ *
+ *       Los días de la serie `porDia` y los del conteo de `periodo.dias` se
+ *       cortan en la hora de Argentina (`periodo.zonaHoraria`), no en UTC.
  *
  *
  *       **Sin montos.** El modelo no guarda precios ni costos (la misma
@@ -35,9 +60,11 @@ router.use(requireAuth);
  *
  *       **Tiempo real y RNF2 (menos de 2 s).** Cada bloque es una consulta
  *       agregada sobre índices, y el resultado se guarda en una caché por
- *       comercio que se descarta sola en cuanto cambia el stock, un producto,
- *       un proveedor o una ubicación: una venta recién registrada aparece en
- *       la próxima carga. `generadoEn` dice cuándo se calcularon los números.
+ *       comercio Y período que se descarta sola en cuanto cambia el stock, un
+ *       producto, un proveedor o una ubicación: una venta recién registrada
+ *       aparece en la próxima carga. `generadoEn` dice cuándo se calcularon los
+ *       números, así que dos respuestas con el mismo `generadoEn` son la misma
+ *       foto.
  *       No hay websocket: el cliente refresca (al volver a la pestaña, o cada
  *       30–60 s).
  *     tags: [KPIs]
@@ -45,7 +72,26 @@ router.use(requireAuth);
  *       - in: query
  *         name: dias
  *         schema: { type: integer, minimum: 1, default: 30, maximum: 90 }
- *         description: Días de la ventana de rotación y compras. Si se pide más del máximo, se recorta a 90.
+ *         description: Días de la ventana móvil de rotación y compras, hoy incluido. Si se pide más del máximo, se recorta a 90. Excluyente con desde/hasta.
+ *       - in: query
+ *         name: desde
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *           example: "2026-03-01T00:00:00.000-03:00"
+ *         description: >
+ *           Primer instante del período, INCLUSIVE. ISO 8601 con zona
+ *           explícita (`Z` u offset); sin zona es 400. Va junto con `hasta` y
+ *           es excluyente con `dias`.
+ *       - in: query
+ *         name: hasta
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *           example: "2026-03-31T23:59:59.000-03:00"
+ *         description: >
+ *           Último instante del período, INCLUSIVE. El rango no puede abarcar
+ *           más de 366 días calendario; si se pasa, es 400 y no se recorta.
  *     responses:
  *       200:
  *         description: Los KPIs del comercio
@@ -58,9 +104,18 @@ router.use(requireAuth);
  *                 periodo:
  *                   type: object
  *                   properties:
- *                     dias: { type: integer, example: 30 }
- *                     desde: { type: string, format: date-time, description: "Inicio del primer día de la ventana" }
- *                     hasta: { type: string, format: date-time }
+ *                     dias:
+ *                       type: integer
+ *                       example: 30
+ *                       description: "Días calendario que abarca el período. Con un rango, los días locales que tocan desde y hasta, los dos incluidos."
+ *                     desde:
+ *                       type: string
+ *                       format: date-time
+ *                       description: "Con `dias`, el inicio del primer día de la ventana. Con un rango, el `desde` que mandó el cliente, tal cual."
+ *                     hasta:
+ *                       type: string
+ *                       format: date-time
+ *                       description: "Con `dias`, el instante del pedido. Con un rango, el `hasta` que mandó el cliente, tal cual."
  *                     zonaHoraria: { type: string, example: America/Argentina/Buenos_Aires }
  *                 stock:
  *                   type: object
@@ -71,6 +126,11 @@ router.use(requireAuth);
  *                     debajo del umbral" (el criterio de HU-17); un umbral en 0
  *                     es "sin umbral" y nunca cuenta.
  *                   properties:
+ *                     alcance:
+ *                       type: string
+ *                       enum: [actual]
+ *                       example: actual
+ *                       description: "Siempre `actual`: este bloque es el estado de ahora y el período no lo mueve. Rotularlo en pantalla."
  *                     productos: { type: integer, example: 42 }
  *                     unidades: { type: integer, example: 1830, description: "Unidades en stock sumando todas las ubicaciones" }
  *                     sinStock: { type: integer, example: 3 }
@@ -169,7 +229,11 @@ router.use(requireAuth);
  *                         unidades: { type: integer }
  *                     montos: { type: object, nullable: true, example: null }
  *       400:
- *         description: "`dias` no es un entero positivo"
+ *         description: >
+ *           `dias` no es un entero positivo; o se mandó `dias` junto con
+ *           `desde`/`hasta`; o falta uno de los dos extremos del rango; o una
+ *           fecha no es ISO 8601 con zona; o `desde` es posterior a `hasta`; o
+ *           el rango abarca más de 366 días.
  *       401:
  *         description: No hay sesión activa
  *       403:

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "../db/client.js";
+import { ErrorDeNegocio } from "../lib/errores.js";
 import {
   movimiento,
   producto,
@@ -7,16 +8,32 @@ import {
   stock,
   ubicacion,
 } from "../db/schema.js";
-import { leerEnteroPositivo } from "./movimientos.service.js";
+import { leerEnteroPositivo, leerInstante } from "./movimientos.service.js";
 
 /**
- * KPIs principales del dashboard (HU-22, RF7, RNF2).
+ * KPIs principales del dashboard (HU-22, RF7, RNF2) filtrables por periodo
+ * (HU-23).
  *
  * Tres bloques, que son los que nombra la historia:
  *
  *   stock                 como esta el inventario AHORA (cache `stock`)
- *   rotacion              cuanto se vendio en la ventana y que se mueve
- *   comprasPorProveedor   a quien se le compro en la ventana y cuanto
+ *   rotacion              cuanto se vendio en el periodo y que se mueve
+ *   comprasPorProveedor   a quien se le compro en el periodo y cuanto
+ *
+ * ---------------------------------------------------------------------------
+ * EL PERIODO NO MUEVE `stock`, Y ES A PROPOSITO (HU-23).
+ *
+ * `rotacion` y `comprasPorProveedor` se recalculan sobre el periodo pedido,
+ * porque salen del libro de `movimiento`, que es historico. `stock` no: sale de
+ * la tabla `stock`, que es la CACHE del saldo actual y no guarda su propia
+ * historia (references/data-model.md). Para "el stock que tenia al 31/03"
+ * habria que reproducir el libro hacia atras, que es un escaneo del libro
+ * entero del comercio y se come el presupuesto de RNF2.
+ *
+ * Asi que el bloque viaja con `alcance: "actual"` y el Frontend lo rotula. Lo
+ * mismo arrastra `diasDeCobertura`, que cruza el stock de hoy con el ritmo de
+ * venta del periodo: ver su comentario.
+ * ---------------------------------------------------------------------------
  *
  * Solo lee. Todo sale de `stock` y del libro de `movimiento` (ver
  * references/data-model.md), siempre filtrado por el `comercioId` de la sesion,
@@ -46,6 +63,26 @@ import { leerEnteroPositivo } from "./movimientos.service.js";
 
 export const DIAS_POR_DEFECTO = 30;
 export const DIAS_MAXIMOS = 90;
+
+/**
+ * Tope de dias que puede abarcar un rango `desde`/`hasta` (HU-23).
+ *
+ * Un año y un dia, para que "el año pasado" entre justo contando el bisiesto.
+ * A diferencia de `dias`, que se recorta, un rango que se pasa se RECHAZA: para
+ * recortarlo habria que mover un extremo, y cual de los dos es adivinar.
+ */
+export const DIAS_MAXIMOS_RANGO = 366;
+
+/**
+ * Lo que dice `stock.alcance` en la respuesta (HU-23).
+ *
+ * El bloque `stock` es el estado de AHORA y no del periodo pedido, porque la
+ * tabla `stock` es la cache del saldo actual y no un historico (ver
+ * references/data-model.md). Viaja explicito en la respuesta para que el
+ * Frontend pueda rotularlo en pantalla en vez de que el usuario crea que esta
+ * viendo el stock que tenia en marzo.
+ */
+export const ALCANCE_STOCK_ACTUAL = "actual";
 
 /** Cuantos productos lista "los mas vendidos". */
 export const LIMITE_MAS_VENDIDOS = 5;
@@ -92,19 +129,143 @@ export function ventanaDeDias(dias, ahora = new Date()) {
   return { dias, desde, hasta: ahora, hoy, fechas };
 }
 
+const vacio = (valor) => valor === undefined || valor === null || valor === "";
+
 /**
  * Valida y normaliza la query string.
  *
  * Pura, como `validarFiltrosAlertas` (HU-17). Devuelve solo los campos
- * conocidos: un `comercioId` que venga en la URL se pierde aca. Reusa el
- * lector de HU-14 para que el 400 diga lo mismo que en el resto de la API.
+ * conocidos: un `comercioId` que venga en la URL se pierde aca. Reusa los
+ * lectores de HU-14 para que el 400 diga lo mismo que en el resto de la API.
+ *
+ * Dos formas de pedir el periodo (HU-23), y son EXCLUYENTES:
+ *
+ *   dias            la ventana movil que termina hoy (lo de HU-22, el default)
+ *   desde + hasta   un rango absoluto, los dos extremos inclusive
+ *
+ * Excluyentes porque "los ultimos 30 dias dentro de marzo" no tiene un
+ * significado unico, y una combinacion que se ignora en silencio es peor que un
+ * 400. Los presets de la historia —dia, semana, mes— los resuelve el Frontend a
+ * instantes concretos: el backend tiene un solo camino de validacion.
+ *
+ * El rango se lee con `leerInstante` (HU-14), que exige ISO 8601 con zona
+ * explicita, y es la MISMA convencion que el reporte PDF de HU-25: inclusivo en
+ * los dos extremos y el cliente resuelve donde empieza y termina su dia. Si los
+ * dos endpoints difirieran, el Frontend necesitaria dos helpers de rango.
  */
 export function validarParametrosKpis(query = {}) {
+  const tieneRango = !vacio(query.desde) || !vacio(query.hasta);
+
+  if (tieneRango) {
+    if (!vacio(query.dias)) {
+      throw new ErrorDeNegocio(
+        'Los parámetros "dias" y "desde"/"hasta" no se pueden combinar: el período se pide de una forma o de la otra',
+        400,
+      );
+    }
+
+    // Los dos o ninguno: un `hasta` solo seria "desde siempre hasta marzo", que
+    // no es un periodo que se pueda comparar con otro.
+    for (const nombre of ["desde", "hasta"]) {
+      if (vacio(query[nombre])) {
+        throw new ErrorDeNegocio(
+          `Falta el parámetro "${nombre}": el período necesita un rango de fechas`,
+          400,
+        );
+      }
+    }
+
+    const desde = leerInstante(query.desde, "desde");
+    const hasta = leerInstante(query.hasta, "hasta");
+
+    if (desde > hasta) {
+      throw new ErrorDeNegocio(
+        'La fecha "desde" no puede ser posterior a la fecha "hasta"',
+        400,
+      );
+    }
+
+    return { desde, hasta };
+  }
+
   const dias = leerEnteroPositivo(query.dias, DIAS_POR_DEFECTO, "dias");
 
   // Se recorta en vez de rechazar, igual que el `limite` de HU-14 y HU-21:
   // pedir de mas no es un error del usuario, y el tope solo protege a la base.
   return { dias: Math.min(dias, DIAS_MAXIMOS) };
+}
+
+/**
+ * La ventana canonica de los KPIs, venga de `dias` o de un rango (HU-23).
+ *
+ * Es el punto de extension del modulo: todo lo que filtre por periodo —esta HU,
+ * el drill-down de HU-24— valida con `validarParametrosKpis` y arma la ventana
+ * con esto, y de aca para abajo hay una sola forma. Pura (recibe `ahora`) para
+ * poder testear los cortes de dia sin reloj.
+ *
+ * Devuelve, ademas de lo de `ventanaDeDias`:
+ *
+ *   zonaHoraria  la zona en la que se cortaron los dias, que viaja al cliente
+ *   clave        la identidad de la ventana para la cache (ver `obtenerKpis`)
+ *
+ * `clave` y no los instantes crudos porque en la ventana movil `hasta` es el
+ * instante del pedido y cambia en cada request: usarlo como clave dejaria la
+ * cache de HU-22 sin un solo acierto. En ese camino la identidad sigue siendo
+ * `dias` + el dia local, exactamente como la escribio HU-22.
+ */
+export function ventanaDeKpis(parametros = {}, ahora = new Date()) {
+  if (!parametros.desde) {
+    const ventana = ventanaDeDias(parametros.dias ?? DIAS_POR_DEFECTO, ahora);
+
+    return {
+      ...ventana,
+      zonaHoraria: ZONA_HORARIA,
+      clave: `${ventana.dias}|${ventana.hoy}`,
+    };
+  }
+
+  const { desde, hasta } = parametros;
+
+  // `validarParametrosKpis` ya exige los dos extremos, pero esto es superficie
+  // compartida (HU-24 la llama directo): sin la guarda, un `hasta` faltante
+  // termina en `diaEnZona(undefined)`, que es un TypeError y sale como 500.
+  if (!hasta) {
+    throw new ErrorDeNegocio(
+      'Falta el parámetro "hasta": el período necesita un rango de fechas',
+      400,
+    );
+  }
+
+  // Por dias calendario locales, no por la diferencia de milisegundos entre los
+  // dos instantes: un rango de las 18 h de ayer a las 9 h de hoy son dos dias
+  // en la serie, no 0,6. Sin horario de verano la diferencia entre dos
+  // medianoches locales es un multiplo exacto de 24 h, asi que la cuenta sale
+  // sin iterar (ver el comentario de ZONA_HORARIA).
+  const primerDia = new Date(`${diaEnZona(desde)}T00:00:00.000${OFFSET_ZONA}`);
+  const ultimoDia = new Date(`${diaEnZona(hasta)}T00:00:00.000${OFFSET_ZONA}`);
+  const dias =
+    Math.round((ultimoDia.getTime() - primerDia.getTime()) / DIA_MS) + 1;
+
+  // Antes de materializar la serie: un rango de diez años son 3650 barras que
+  // nadie va a mirar y una respuesta que no hace falta armar para rechazarla.
+  if (dias > DIAS_MAXIMOS_RANGO) {
+    throw new ErrorDeNegocio(
+      `El período no puede abarcar más de ${DIAS_MAXIMOS_RANGO} días y el pedido abarca ${dias}`,
+      400,
+    );
+  }
+
+  return {
+    dias,
+    desde,
+    hasta,
+    hoy: diaEnZona(ahora),
+    fechas: Array.from({ length: dias }, (_, i) =>
+      diaEnZona(new Date(primerDia.getTime() + i * DIA_MS)),
+    ),
+    zonaHoraria: ZONA_HORARIA,
+    clave: `${desde.toISOString()}|${hasta.toISOString()}`,
+  };
 }
 
 /**
@@ -132,6 +293,11 @@ export function completarSerie(fechas, filas) {
  * porque prometer un dia que no hay es peor que avisar uno antes. `null` si no
  * se vendio nada: sin ritmo de venta no hay cobertura que calcular, y un
  * `Infinity` no viaja en JSON.
+ *
+ * Con un periodo historico (HU-23) mezcla dos momentos: el stock es de hoy y el
+ * ritmo es el del periodo. Se lee "al ritmo que vendia en marzo, lo que tengo
+ * hoy me dura N dias", que es una proyeccion util, pero NO es la cobertura que
+ * tenia en marzo. Va en la lista de trampas del contrato.
  */
 export function diasDeCobertura(stockActual, unidadesVendidas, dias) {
   if (!(unidadesVendidas > 0) || !(dias > 0)) {
@@ -303,12 +469,20 @@ async function huellaDelComercio(comercioId) {
  *   Las compras sin proveedor quedan en el grupo con `id` nulo.
  *
  * Las ventas y las compras de la ventana se leen por el indice
- * `movimiento_comercio_tipo_fecha_idx`, que es exactamente ese filtro.
+ * `movimiento_comercio_tipo_fecha_idx`, que es exactamente ese filtro: con los
+ * dos extremos sigue siendo un rango del indice, no un escaneo.
+ *
+ * Los tres filtros del libro llevan los dos extremos INCLUSIVE (HU-23), igual
+ * que el reporte de HU-25. Lo que NO se acota, a proposito: el CTE `saldos`,
+ * `por_ubicacion` y la subconsulta `stockActual` de `mas_vendidos`, que son el
+ * estado de AHORA (ver `ALCANCE_STOCK_ACTUAL`). El ranking de `mas_vendidos` si
+ * queda dentro del periodo, porque sale del CTE `ventas`.
  */
-async function consultarKpis(comercioId, desde) {
+async function consultarKpis(comercioId, ventana) {
   // ISO explicito: en un `sql` crudo el driver serializaria el Date con la zona
   // del proceso, y contra un `timestamp` sin zona Postgres la descartaria.
-  const desdeIso = desde.toISOString();
+  const desdeIso = ventana.desde.toISOString();
+  const hastaIso = ventana.hasta.toISOString();
 
   const { rows } = await db.execute(sql`
     with ventas as (
@@ -319,6 +493,7 @@ async function consultarKpis(comercioId, desde) {
       where m.comercio_id = ${comercioId}
         and m.tipo = 'venta'
         and m.fecha >= ${desdeIso}::timestamp
+        and m.fecha <= ${hastaIso}::timestamp
       group by m.producto_id
     ),
     saldos as (
@@ -402,6 +577,7 @@ async function consultarKpis(comercioId, desde) {
           where m.comercio_id = ${comercioId}
             and m.tipo = 'venta'
             and m.fecha >= ${desdeIso}::timestamp
+            and m.fecha <= ${hastaIso}::timestamp
           group by 1
         ) d
       ) as por_dia,
@@ -423,6 +599,7 @@ async function consultarKpis(comercioId, desde) {
           where m.comercio_id = ${comercioId}
             and m.tipo = 'compra'
             and m.fecha >= ${desdeIso}::timestamp
+            and m.fecha <= ${hastaIso}::timestamp
           group by pr.id
         ) c
       ) as compras,
@@ -435,7 +612,7 @@ async function consultarKpis(comercioId, desde) {
 
 /** Calcula todo, sin cache, y devuelve tambien la huella de ese momento. */
 async function calcularKpis(comercioId, ventana) {
-  const fila = await consultarKpis(comercioId, ventana.desde);
+  const fila = await consultarKpis(comercioId, ventana);
   const estado = fila.estado;
   const serie = completarSerie(ventana.fechas, fila.por_dia);
 
@@ -445,9 +622,11 @@ async function calcularKpis(comercioId, ventana) {
       dias: ventana.dias,
       desde: ventana.desde,
       hasta: ventana.hasta,
-      zonaHoraria: ZONA_HORARIA,
+      zonaHoraria: ventana.zonaHoraria,
     },
     stock: {
+      // El periodo NO lo mueve: es el estado de ahora. Ver `ALCANCE_STOCK_ACTUAL`.
+      alcance: ALCANCE_STOCK_ACTUAL,
       productos: estado.productos,
       unidades: estado.unidades,
       sinStock: estado.sinStock,
@@ -516,15 +695,19 @@ export function limpiarCacheDeKpis() {
  * La huella guardada es la que vino en la MISMA sentencia que los numeros, asi
  * que nunca puede quedar un calculo viejo guardado con una huella nueva.
  *
- * La clave lleva el dia: a medianoche la ventana se corre, y lo que se calculo
- * ayer ya no es la misma ventana aunque no haya cambiado nada.
+ * La clave lleva la identidad de la ventana (`ventana.clave`) y no solo el
+ * comercio: con el periodo afuera de la clave, pedir marzo despues de febrero
+ * devolveria los numeros de febrero. En la ventana movil esa identidad es
+ * `dias` + el dia local —a medianoche la ventana se corre, y lo que se calculo
+ * ayer ya no es la misma ventana aunque no haya cambiado nada—, y en un rango
+ * absoluto son los dos extremos.
  *
- * Sin transaccion: es una sola sentencia, que ya ve un unico snapshot.
+ * Solo lectura, y sin transaccion: es una sola sentencia, que ya ve un unico
+ * snapshot.
  */
 export async function obtenerKpis(comercioId, query = {}) {
-  const { dias } = validarParametrosKpis(query);
-  const ventana = ventanaDeDias(dias);
-  const clave = `${comercioId}|${dias}|${ventana.hoy}`;
+  const ventana = ventanaDeKpis(validarParametrosKpis(query));
+  const clave = `${comercioId}|${ventana.clave}`;
 
   const guardado = cacheDeKpis.get(clave);
 
